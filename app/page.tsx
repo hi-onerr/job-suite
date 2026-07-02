@@ -80,9 +80,28 @@ interface PrepResult {
     sourceNote?: string
   }[]
   questionsToRecruiter?: { question: string; context?: string }[]
+  costOfLiving?: {
+    city: string
+    currency: string
+    currencySymbol: string
+    rent: number
+    food: number
+    transport: number
+    utilities: number
+    misc: number
+    total: number
+    idrRate: number
+    verdict: 'comfortable' | 'tight' | 'insufficient'
+    remainingLocal: number
+    remainingIdr: number
+    notes?: string
+  } | null
   _searchSources?: { url: string; title: string }[]
   _searchQueries?: string[]
   _salarySearchSources?: { url: string; title: string }[]
+  _colSources?: { url: string; title: string }[]
+  _isInternational?: boolean
+  _detectedCity?: string | null
 }
 
 type DocType = 'cv' | 'coverletter' | 'email' | 'followup' | 'thankyou'
@@ -1489,6 +1508,11 @@ function InterviewPrepPanel({ prep, role, company }: { prep: PrepResult; role: s
               <div className="bg-white border border-gray-100 rounded-xl p-4">
                 <p className="text-xs font-semibold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-3"><BarChart2 size={12} /> Salary Insights</p>
                 <SalaryInsightCard prep={prep} />
+                {prep.costOfLiving && (
+                  <div className="mt-4">
+                    <CostOfLivingCard col={prep.costOfLiving} salary={prep.salaryMin} colSources={prep._colSources} />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2484,6 +2508,119 @@ const CONFIDENCE_CONFIG = {
   low:    { label: 'Estimasi AI · tidak pasti', bg: 'bg-red-100', text: 'text-red-600',    dot: 'bg-red-400'   },
 }
 
+function CostOfLivingCard({ col, salary, colSources }: {
+  col: NonNullable<PrepResult['costOfLiving']>
+  salary?: number
+  colSources?: { url: string; title: string }[]
+}) {
+  const sym = col.currencySymbol || col.currency
+  const fmt = (n: number) => n.toLocaleString('en-US')
+  const fmtIdr = (n: number) => `Rp ${Math.round(n / 1_000_000).toLocaleString('id-ID')} jt`
+
+  const VERDICT_CONFIG = {
+    comfortable: { label: 'Bisa nabung', color: 'text-green-700 bg-green-50 border-green-200', bar: 'bg-green-500' },
+    tight:       { label: 'Pas-pasan',   color: 'text-amber-700 bg-amber-50 border-amber-200', bar: 'bg-amber-400' },
+    insufficient:{ label: 'Kurang',      color: 'text-red-600 bg-red-50 border-red-200',        bar: 'bg-red-400' },
+  }
+  const vc = VERDICT_CONFIG[col.verdict] ?? VERDICT_CONFIG.tight
+
+  const EXPENSE_ROWS = [
+    { label: 'Sewa (1BR)',  value: col.rent,      icon: '🏠' },
+    { label: 'Makan',       value: col.food,      icon: '🍽️' },
+    { label: 'Transport',   value: col.transport, icon: '🚇' },
+    { label: 'Utilitas',    value: col.utilities, icon: '💡' },
+    { label: 'Lain-lain',   value: col.misc,      icon: '🛍️' },
+  ].filter(r => r.value > 0)
+
+  const refSalary = salary ?? 0
+  const spendPct = refSalary > 0 ? Math.min(100, Math.round((col.total / refSalary) * 100)) : null
+  const savePct  = spendPct != null ? 100 - spendPct : null
+
+  return (
+    <div className="card border-l-4 border-l-blue-400 bg-gradient-to-br from-blue-50/30 to-white">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🌍</span>
+          <div>
+            <p className="font-semibold text-gray-900 text-sm">Kelayakan Hidup di {col.city}</p>
+            <p className="text-xs text-gray-400">Estimasi biaya hidup single professional</p>
+          </div>
+        </div>
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${vc.color}`}>
+          {vc.label}
+        </span>
+      </div>
+
+      {/* Salary vs expenses bar */}
+      {refSalary > 0 && spendPct != null && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+            <span>Gaji: <span className="font-semibold text-gray-800">{sym}{fmt(refSalary)}/bln</span></span>
+            <span className="text-gray-400">pengeluaran {spendPct}% · sisa {savePct}%</span>
+          </div>
+          <div className="h-3 bg-gray-100 rounded-full overflow-hidden flex">
+            <div className="h-full bg-red-400/80 transition-all" style={{ width: `${spendPct}%` }} title="Pengeluaran" />
+            <div className={`h-full ${vc.bar} transition-all`} style={{ width: `${savePct}%` }} title="Sisa" />
+          </div>
+          <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
+            <span><span className="inline-block w-2 h-2 rounded-sm bg-red-400/80 mr-1" />Pengeluaran {sym}{fmt(col.total)}</span>
+            <span><span className={`inline-block w-2 h-2 rounded-sm ${vc.bar} mr-1`} />Sisa {sym}{fmt(col.remainingLocal)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Expense breakdown */}
+      <div className="space-y-1.5 mb-4">
+        {EXPENSE_ROWS.map(row => {
+          const pct = col.total > 0 ? Math.round((row.value / col.total) * 100) : 0
+          return (
+            <div key={row.label} className="flex items-center gap-2 text-xs">
+              <span className="w-4 text-center">{row.icon}</span>
+              <span className="text-gray-600 w-24 shrink-0">{row.label}</span>
+              <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-blue-300 rounded-full" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="text-gray-700 font-medium w-24 text-right shrink-0">{sym}{fmt(row.value)}</span>
+            </div>
+          )
+        })}
+        <div className="flex items-center justify-between pt-1.5 border-t border-gray-100 text-xs font-semibold text-gray-800">
+          <span>Total pengeluaran</span>
+          <span>{sym}{fmt(col.total)}/bln</span>
+        </div>
+      </div>
+
+      {/* Remaining + IDR equivalent */}
+      <div className={`rounded-xl px-4 py-3 border ${vc.color} flex items-center justify-between gap-4`}>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70 mb-0.5">Sisa / bisa ditabung</p>
+          <p className="text-lg font-bold leading-none">{sym}{fmt(col.remainingLocal)}<span className="text-xs font-normal ml-1">/bln</span></p>
+          {col.idrRate > 0 && (
+            <p className="text-xs opacity-70 mt-0.5">≈ {fmtIdr(col.remainingIdr)}/bln dalam IDR</p>
+          )}
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] opacity-60">Kurs estimasi</p>
+          <p className="text-xs font-medium">1 {col.currency} ≈ Rp {col.idrRate.toLocaleString('id-ID')}</p>
+        </div>
+      </div>
+
+      {/* Notes + sources */}
+      {col.notes && <p className="text-[10px] text-gray-400 italic mt-2">{col.notes}</p>}
+      {colSources && colSources.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          <span className="text-[10px] text-gray-400">Sumber:</span>
+          {colSources.slice(0, 3).map((s, i) => (
+            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+              className="text-[10px] text-primary hover:underline truncate max-w-[160px]">{s.title}</a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SalaryInsightCard({ prep }: { prep: PrepResult }) {
   const {
     salaryMin, salaryMax, salarySafe, salaryCurrency: cur = 'IDR',
@@ -3037,6 +3174,17 @@ function PrepResults({ data, role = '', company = '' }: { data: PrepResult; role
             <BarChart2 size={15} className="text-primary" /> Salary Insights
           </h3>
           <SalaryInsightCard prep={data} />
+
+          {/* Cost of living — only shown for international jobs */}
+          {data.costOfLiving && (
+            <div className="mt-4">
+              <CostOfLivingCard
+                col={data.costOfLiving}
+                salary={data.salaryMin}
+                colSources={data._colSources}
+              />
+            </div>
+          )}
         </div>
         <div className="card">
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 text-sm">

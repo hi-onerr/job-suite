@@ -14,9 +14,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // ── Detect international job location ─────────────────────────────────────
+    const INTL_REGEX = /\b(singapore|malaysia|usa|united states|uk|united kingdom|britain|australia|japan|korea|hong kong|dubai|uae|abu dhabi|germany|netherlands|canada|new zealand|taiwan|thailand|vietnam|philippines|india|china|france|switzerland|sweden|denmark|norway|finland|europe|apac|sea region)\b/i
+    const jobContext = `${role} ${company} ${jobDesc.slice(0, 800)}`
+    const detectedIntl = INTL_REGEX.exec(jobContext)
+    const isInternational = !!detectedIntl
+    const detectedCity = detectedIntl ? detectedIntl[1] : null
+
     // ── Step 1: parallel live searches ────────────────────────────────────────
-    // Run interview question search and salary search concurrently.
-    const [interviewSearch, salarySearch] = await Promise.all([
+    const searches = await Promise.all([
       generateTextWithSearch(
         genAI,
         `Find real interview questions and experiences reported by candidates for "${role}" at "${company}". ` +
@@ -25,12 +31,24 @@ export async function POST(req: NextRequest) {
       ),
       generateTextWithSearch(
         genAI,
-        `What is the actual salary range for "${role}" at "${company}" in Indonesia (or globally if not Indonesia-based)? ` +
+        `What is the actual salary range for "${role}" at "${company}" in ${isInternational ? detectedCity! : 'Indonesia'}? ` +
         `Find real data from Glassdoor Salary, LinkedIn Salary Insights, JobStreet, Indeed, or Levels.fyi. ` +
-        `Include monthly gross figures in IDR or USD, broken down by seniority level if available. ` +
+        `Include monthly gross figures in local currency, broken down by seniority level if available. ` +
         `Cite the specific source and year of the data.`
       ),
+      isInternational
+        ? generateTextWithSearch(
+            genAI,
+            `What is the monthly cost of living in ${detectedCity} for a single expat professional in 2024–2025? ` +
+            `Break down: (1) rent for a 1-bedroom apartment, (2) groceries + dining out, (3) public transport pass, ` +
+            `(4) utilities (electricity, water, internet), (5) miscellaneous (gym, entertainment, personal care). ` +
+            `Also provide the approximate IDR exchange rate for ${detectedCity}'s local currency. ` +
+            `Source from Numbeo, Expatistan, or official cost-of-living guides.`
+          )
+        : Promise.resolve(null),
     ])
+
+    const [interviewSearch, salarySearch, colSearch] = searches
 
     // Build interview sources block
     const liveSourcesBlock = interviewSearch.sources.length > 0
@@ -49,6 +67,15 @@ export async function POST(req: NextRequest) {
         salarySearch.text.slice(0, 2000) + '\n'
       : `\n(No live salary data found — estimate conservatively and set salaryConfidence to "low".)\n`
 
+    // Build cost of living context block
+    const liveColBlock = (isInternational && colSearch)
+      ? `\nLIVE COST OF LIVING DATA for ${detectedCity} (use as ground truth for costOfLiving field):\n` +
+        (colSearch.sources.length > 0
+          ? colSearch.sources.slice(0, 4).map((s, i) => `  [C${i + 1}] ${s.title} — ${s.url}`).join('\n') + '\n'
+          : '') +
+        colSearch.text.slice(0, 1500) + '\n'
+      : ''
+
     const prompt = `You are an expert career coach and interview preparation specialist with deep knowledge of hiring patterns across industries.
 
 Generate comprehensive interview preparation for this candidate.
@@ -59,7 +86,7 @@ PROFILE: ${profile}
 APPLYING TO: ${role} at ${company}
 JOB DESCRIPTION: ${jobDesc}
 ${liveSourcesBlock}
-${liveSalaryBlock}
+${liveSalaryBlock}${liveColBlock}
 SALARY RULES (follow strictly):
 - Use the LIVE SALARY DATA above as primary source. Do NOT invent numbers.
 - If live data has specific figures, use them. If ranges differ across sources, show the realistic midpoint range.
@@ -94,6 +121,24 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
     "<specific tip 2>",
     "<specific tip 3>"
   ],
+  "costOfLiving": ${isInternational
+    ? `{
+    "city": "<city/country name>",
+    "currency": "<local currency code, e.g. SGD, USD, GBP>",
+    "currencySymbol": "<symbol, e.g. S$, $, £>",
+    "rent": <monthly 1BR apartment in city center — use LIVE COL DATA>,
+    "food": <monthly groceries + dining — use LIVE COL DATA>,
+    "transport": <monthly public transport — use LIVE COL DATA>,
+    "utilities": <monthly electricity + water + internet — use LIVE COL DATA>,
+    "misc": <monthly personal care + entertainment + gym — use LIVE COL DATA>,
+    "total": <sum of all above — must equal rent+food+transport+utilities+misc>,
+    "idrRate": <approximate 1 unit of local currency = X IDR, e.g. 11500 for SGD>,
+    "verdict": "<comfortable|tight|insufficient — based on (salaryMin - total) / salaryMin ratio: >35% = comfortable, 15-35% = tight, <15% = insufficient>",
+    "remainingLocal": <salaryMin - total (use salaryMin from salary section)>,
+    "remainingIdr": <remainingLocal * idrRate>,
+    "notes": "<1 sentence: e.g. 'Assumes shared 1BR in city fringe, public transport, no car'>"
+  }`
+    : 'null'} ,
   "keyTips": [
     "<preparation tip 1 specific to this role>",
     "<preparation tip 2>",
@@ -200,6 +245,9 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
     data._searchSources = interviewSearch.sources
     data._searchQueries = interviewSearch.searchQueries
     data._salarySearchSources = salarySources
+    data._colSources = colSearch?.sources ?? []
+    data._isInternational = isInternational
+    data._detectedCity = detectedCity
 
     return NextResponse.json(data)
   } catch (error: any) {
