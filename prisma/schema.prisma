@@ -1,0 +1,98 @@
+// Phase 0 schema — see PHASE0-PLAN.md §3
+// Dev uses SQLite; switch provider to "postgresql" before deploying for the group.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── App models ───────────────────────────────────────────────────────────────
+
+model User {
+  id            String        @id @default(cuid())
+  name          String?
+  email         String        @unique
+  emailVerified DateTime?
+  image         String?
+  profileText   String? // was localStorage "user-profile"
+  profileStructured String? // AI-parsed CV as JSON string (Gemini)
+  accounts      Account[]
+  sessions      Session[]
+  apiKeys       ApiKey[]
+  applications  Application[]
+  createdAt     DateTime      @default(now())
+}
+
+model ApiKey {
+  id         String @id @default(cuid())
+  userId     String
+  provider   String // "gemini" | "anthropic" | "openai"
+  ciphertext String // AES-256-GCM encrypted key
+  iv         String
+  authTag    String
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+model Application {
+  id          String   @id @default(cuid())
+  userId      String
+  company     String
+  role        String
+  location    String?
+  url         String?
+  jobDesc     String
+  status      String   @default("saved") // saved|applied|interview|offer|rejected
+  matchScore  Int      @default(0)
+  analysis    String? // AI analysis JSON (strengths, gaps, recommendation, salaryRange)
+  documents   String? // generated docs JSON: [{ type, content, createdAt }] (latest per type)
+  prep        String? // cached interview-prep JSON (company overview, salary, questions)
+  appliedDate String?
+  deadline    String?
+  notes       String?
+  salary      String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ── Auth.js (NextAuth) standard models ───────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

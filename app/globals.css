@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1F4E79;
+  --secondary: #2E75B6;
+  --accent: #0EA5A4;
+
+  /* Theme surfaces — overridden under .dark below. */
+  --app-bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+  --text: #111827;
+  --border: #e5e7eb;
+}
+
+.dark {
+  --app-bg: #0b1220;
+  --surface: #131c2e;
+  --surface-2: #0f1728;
+  --surface-3: #1b2740;
+  --text: #e5e7eb;
+  --border: #27324c;
+}
+
+body {
+  color: var(--text);
+  background-color: var(--app-bg);
+  background-image:
+    radial-gradient(900px circle at 0% 0%, rgba(46, 117, 182, 0.06), transparent 45%),
+    radial-gradient(900px circle at 100% 0%, rgba(14, 165, 164, 0.06), transparent 45%);
+}
+
+/* ── Dark mode: remap the common neutral utilities to theme surfaces so the many
+   hardcoded bg-white/text-gray/border-gray classes adapt without editing markup.
+   Coloured badges, callouts and gradients are intentionally left as-is. ─────── */
+.dark .bg-white { background-color: var(--surface) !important; }
+.dark .bg-white\/80 { background-color: rgba(19, 28, 46, 0.8) !important; }
+.dark .bg-gray-50 { background-color: var(--surface-2) !important; }
+.dark .bg-gray-100 { background-color: var(--surface-3) !important; }
+.dark .bg-gray-200 { background-color: #2a3652 !important; }
+.dark .bg-slate-50 { background-color: var(--surface-2) !important; }
+.dark .bg-slate-50\/60 { background-color: var(--surface-2) !important; }
+.dark .bg-slate-100 { background-color: var(--surface-3) !important; }
+
+.dark .text-gray-900 { color: #f1f5f9 !important; }
+.dark .text-gray-800 { color: #e2e8f0 !important; }
+.dark .text-gray-700 { color: #cbd5e1 !important; }
+.dark .text-gray-600 { color: #aeb9c9 !important; }
+.dark .text-gray-500 { color: #94a3b8 !important; }
+.dark .text-gray-400 { color: #7a8699 !important; }
+.dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-slate-400 { color: #7a8699 !important; }
+
+.dark .border-gray-100 { border-color: var(--border) !important; }
+.dark .border-gray-200 { border-color: var(--border) !important; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 bg-primary text-white px-4 py-2 rounded-lg
+         font-medium shadow-sm transition-all hover:bg-secondary hover:shadow-md
+         active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 border px-4 py-2 rounded-lg
+         font-medium transition-all hover:border-primary hover:text-primary hover:bg-blue-50/50
+         active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none;
+  background-color: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn-accent {
+  @apply inline-flex items-center justify-center gap-2 bg-accent text-white px-4 py-2 rounded-lg
+         font-medium shadow-sm transition-all hover:bg-accent-dark hover:shadow-md
+         active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none;
+}
+
+/* ── Surfaces ────────────────────────────────────────────────────────────── */
+.card {
+  @apply rounded-2xl shadow-card border p-6;
+  background-color: var(--surface);
+  border-color: var(--border);
+}
+
+.card-hover {
+  @apply transition-all hover:shadow-card-hover hover:border-primary/20;
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.input {
+  @apply w-full border rounded-lg px-3 py-2 text-sm transition-shadow
+         focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary;
+  background-color: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.textarea {
+  @apply w-full border rounded-lg px-3 py-2 text-sm transition-shadow
+         focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary resize-none;
+  background-color: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* ── Sidebar nav ─────────────────────────────────────────────────────────── */
+.nav-link {
+  @apply flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all
+         text-slate-500 hover:bg-slate-100 hover:text-slate-900;
+}
+
+.nav-link-active {
+  @apply bg-brand-gradient text-white shadow-sm hover:bg-brand-gradient hover:text-white;
+}
+
+/* Keep hover states dark-appropriate (override the light @apply hover colours). */
+.dark .nav-link:hover { background-color: var(--surface-3); color: #e5e7eb; }
+.dark .btn-secondary:hover { background-color: var(--surface-3); }
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge-green  { @apply inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs px-2.5 py-1 rounded-full font-medium; }
+.badge-yellow { @apply inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-xs px-2.5 py-1 rounded-full font-medium; }
+.badge-red    { @apply inline-flex items-center gap-1 bg-red-100 text-red-700 text-xs px-2.5 py-1 rounded-full font-medium; }
+.badge-blue   { @apply inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded-full font-medium; }
+.badge-gray   { @apply inline-flex items-center gap-1 bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-medium; }
+
+/* ── Misc ────────────────────────────────────────────────────────────────── */
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
