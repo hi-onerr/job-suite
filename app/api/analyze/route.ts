@@ -38,7 +38,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   "strengths": [<3-5 specific matching skills/experiences as strings>],
   "gaps": [<2-4 missing skills/experiences as strings>],
   "recommendation": "<2-3 sentence recommendation on whether to apply and how to position>",
-  "salaryRange": "<estimated salary range for this role in the job's location currency>",
+  "salaryRange": "<estimated salary range — always include currency, period, and type, e.g. 'IDR 15,000,000 – 25,000,000 / bulan (gross)' or 'SGD 6,000 – 9,000 / month (gross)'>",
   "keywordsToAdd": [<3-5 keywords missing from profile that are in job desc>]
 }`
 

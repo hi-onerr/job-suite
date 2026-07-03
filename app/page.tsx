@@ -1313,8 +1313,11 @@ function JobDetail({ job, onUpdate, onDelete, profile }: {
           )}
           {job.analysis.salaryRange && (
             <div className="bg-green-50 rounded-lg p-3">
-              <p className="text-xs font-medium text-green-700">Estimasi Gaji</p>
+              <p className="text-xs font-medium text-green-700 mb-0.5">Estimasi Gaji</p>
               <p className="text-sm font-bold text-green-800">{job.analysis.salaryRange}</p>
+              {!/bulan|month|tahun|year|annual/i.test(job.analysis.salaryRange) && (
+                <p className="text-[10px] text-green-600 mt-0.5">gross · per bulan (estimasi)</p>
+              )}
             </div>
           )}
         </div>
@@ -2314,8 +2317,11 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, onGoToPr
 
             {result.salaryRange && (
               <div className="mt-3 bg-green-50 rounded-lg p-3">
-                <p className="text-xs font-medium text-green-700">Estimated Salary Range</p>
+                <p className="text-xs font-medium text-green-700 mb-0.5">Estimasi Gaji</p>
                 <p className="text-sm font-bold text-green-800">{result.salaryRange}</p>
+                {!/bulan|month|tahun|year|annual/i.test(result.salaryRange) && (
+                  <p className="text-[10px] text-green-600 mt-0.5">gross · per bulan (estimasi)</p>
+                )}
               </div>
             )}
           </div>
