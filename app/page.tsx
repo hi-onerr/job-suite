@@ -9,7 +9,7 @@ import {
   AlertCircle, Upload, User, Settings, Key, LogOut, LogIn,
   Sparkles, TrendingUp, Target, Send, Award, MapPin, Phone, Linkedin, GraduationCap, Lightbulb,
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
-  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe,
+  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X,
 } from 'lucide-react'
 import { exportPdf, exportDocx, exportFileName, guessCandidateName, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
@@ -2739,27 +2739,116 @@ function SalaryInsightCard({ prep }: { prep: PrepResult }) {
 
 // ── WORLD CLOCK TAB ──────────────────────────────────────────────────────────
 
-const CLOCK_MARKETS = [
+type ClockMarket = { city: string; country: string; tz: string; flag: string; region: string; home?: boolean }
+
+const CLOCK_MARKETS: ClockMarket[] = [
   // Asia-Pacific
-  { city: 'Jakarta',       country: 'Indonesia', tz: 'Asia/Jakarta',       flag: '🇮🇩', region: 'Asia-Pacific', home: true },
-  { city: 'Singapore',     country: 'Singapore', tz: 'Asia/Singapore',     flag: '🇸🇬', region: 'Asia-Pacific' },
-  { city: 'Kuala Lumpur',  country: 'Malaysia',  tz: 'Asia/Kuala_Lumpur',  flag: '🇲🇾', region: 'Asia-Pacific' },
-  { city: 'Tokyo',         country: 'Japan',     tz: 'Asia/Tokyo',         flag: '🇯🇵', region: 'Asia-Pacific' },
-  { city: 'Seoul',         country: 'Korea',     tz: 'Asia/Seoul',         flag: '🇰🇷', region: 'Asia-Pacific' },
-  { city: 'Sydney',        country: 'Australia', tz: 'Australia/Sydney',   flag: '🇦🇺', region: 'Asia-Pacific' },
+  { city: 'Jakarta',       country: 'Indonesia',    tz: 'Asia/Jakarta',        flag: '🇮🇩', region: 'Asia-Pacific', home: true },
+  { city: 'Singapore',     country: 'Singapore',    tz: 'Asia/Singapore',      flag: '🇸🇬', region: 'Asia-Pacific' },
+  { city: 'Kuala Lumpur',  country: 'Malaysia',     tz: 'Asia/Kuala_Lumpur',   flag: '🇲🇾', region: 'Asia-Pacific' },
+  { city: 'Tokyo',         country: 'Japan',        tz: 'Asia/Tokyo',          flag: '🇯🇵', region: 'Asia-Pacific' },
+  { city: 'Seoul',         country: 'Korea',        tz: 'Asia/Seoul',          flag: '🇰🇷', region: 'Asia-Pacific' },
+  { city: 'Sydney',        country: 'Australia',    tz: 'Australia/Sydney',    flag: '🇦🇺', region: 'Asia-Pacific' },
   // Middle East
-  { city: 'Dubai',         country: 'UAE',       tz: 'Asia/Dubai',         flag: '🇦🇪', region: 'Middle East' },
-  { city: 'Abu Dhabi',     country: 'UAE',       tz: 'Asia/Dubai',         flag: '🇦🇪', region: 'Middle East' },
+  { city: 'Dubai',         country: 'UAE',          tz: 'Asia/Dubai',          flag: '🇦🇪', region: 'Middle East' },
+  { city: 'Abu Dhabi',     country: 'UAE',          tz: 'Asia/Dubai',          flag: '🇦🇪', region: 'Middle East' },
   // Europe
-  { city: 'London',        country: 'UK',        tz: 'Europe/London',      flag: '🇬🇧', region: 'Europe' },
-  { city: 'Amsterdam',     country: 'Netherlands', tz: 'Europe/Amsterdam', flag: '🇳🇱', region: 'Europe' },
-  { city: 'Frankfurt',     country: 'Germany',   tz: 'Europe/Berlin',      flag: '🇩🇪', region: 'Europe' },
-  { city: 'Zurich',        country: 'Switzerland', tz: 'Europe/Zurich',    flag: '🇨🇭', region: 'Europe' },
-  // USA
-  { city: 'New York',      country: 'USA',       tz: 'America/New_York',   flag: '🇺🇸', region: 'Americas' },
-  { city: 'Chicago',       country: 'USA',       tz: 'America/Chicago',    flag: '🇺🇸', region: 'Americas' },
-  { city: 'San Francisco', country: 'USA',       tz: 'America/Los_Angeles',flag: '🇺🇸', region: 'Americas' },
-] as const
+  { city: 'London',        country: 'UK',           tz: 'Europe/London',       flag: '🇬🇧', region: 'Europe' },
+  { city: 'Amsterdam',     country: 'Netherlands',  tz: 'Europe/Amsterdam',    flag: '🇳🇱', region: 'Europe' },
+  { city: 'Frankfurt',     country: 'Germany',      tz: 'Europe/Berlin',       flag: '🇩🇪', region: 'Europe' },
+  { city: 'Zurich',        country: 'Switzerland',  tz: 'Europe/Zurich',       flag: '🇨🇭', region: 'Europe' },
+  // Americas
+  { city: 'New York',      country: 'USA',          tz: 'America/New_York',    flag: '🇺🇸', region: 'Americas' },
+  { city: 'Chicago',       country: 'USA',          tz: 'America/Chicago',     flag: '🇺🇸', region: 'Americas' },
+  { city: 'San Francisco', country: 'USA',          tz: 'America/Los_Angeles', flag: '🇺🇸', region: 'Americas' },
+]
+
+// Cities available to add — filtered out at runtime if already active
+const CITY_CATALOG: ClockMarket[] = [
+  // Southeast Asia
+  { city: 'Bali',            country: 'Indonesia',     tz: 'Asia/Makassar',           flag: '🇮🇩', region: 'Asia-Pacific' },
+  { city: 'Surabaya',        country: 'Indonesia',     tz: 'Asia/Jakarta',            flag: '🇮🇩', region: 'Asia-Pacific' },
+  { city: 'Bandung',         country: 'Indonesia',     tz: 'Asia/Jakarta',            flag: '🇮🇩', region: 'Asia-Pacific' },
+  { city: 'Bangkok',         country: 'Thailand',      tz: 'Asia/Bangkok',            flag: '🇹🇭', region: 'Asia-Pacific' },
+  { city: 'Ho Chi Minh City',country: 'Vietnam',       tz: 'Asia/Ho_Chi_Minh',        flag: '🇻🇳', region: 'Asia-Pacific' },
+  { city: 'Hanoi',           country: 'Vietnam',       tz: 'Asia/Ho_Chi_Minh',        flag: '🇻🇳', region: 'Asia-Pacific' },
+  { city: 'Manila',          country: 'Philippines',   tz: 'Asia/Manila',             flag: '🇵🇭', region: 'Asia-Pacific' },
+  // South Asia
+  { city: 'Bangalore',       country: 'India',         tz: 'Asia/Kolkata',            flag: '🇮🇳', region: 'Asia-Pacific' },
+  { city: 'Mumbai',          country: 'India',         tz: 'Asia/Kolkata',            flag: '🇮🇳', region: 'Asia-Pacific' },
+  { city: 'Delhi',           country: 'India',         tz: 'Asia/Kolkata',            flag: '🇮🇳', region: 'Asia-Pacific' },
+  { city: 'Hyderabad',       country: 'India',         tz: 'Asia/Kolkata',            flag: '🇮🇳', region: 'Asia-Pacific' },
+  { city: 'Pune',            country: 'India',         tz: 'Asia/Kolkata',            flag: '🇮🇳', region: 'Asia-Pacific' },
+  { city: 'Chennai',         country: 'India',         tz: 'Asia/Kolkata',            flag: '🇮🇳', region: 'Asia-Pacific' },
+  // East Asia
+  { city: 'Hong Kong',       country: 'HK',            tz: 'Asia/Hong_Kong',          flag: '🇭🇰', region: 'Asia-Pacific' },
+  { city: 'Taipei',          country: 'Taiwan',        tz: 'Asia/Taipei',             flag: '🇹🇼', region: 'Asia-Pacific' },
+  { city: 'Shanghai',        country: 'China',         tz: 'Asia/Shanghai',           flag: '🇨🇳', region: 'Asia-Pacific' },
+  { city: 'Beijing',         country: 'China',         tz: 'Asia/Shanghai',           flag: '🇨🇳', region: 'Asia-Pacific' },
+  { city: 'Shenzhen',        country: 'China',         tz: 'Asia/Shanghai',           flag: '🇨🇳', region: 'Asia-Pacific' },
+  { city: 'Osaka',           country: 'Japan',         tz: 'Asia/Tokyo',              flag: '🇯🇵', region: 'Asia-Pacific' },
+  // Oceania
+  { city: 'Melbourne',       country: 'Australia',     tz: 'Australia/Melbourne',     flag: '🇦🇺', region: 'Asia-Pacific' },
+  { city: 'Brisbane',        country: 'Australia',     tz: 'Australia/Brisbane',      flag: '🇦🇺', region: 'Asia-Pacific' },
+  { city: 'Perth',           country: 'Australia',     tz: 'Australia/Perth',         flag: '🇦🇺', region: 'Asia-Pacific' },
+  { city: 'Auckland',        country: 'New Zealand',   tz: 'Pacific/Auckland',        flag: '🇳🇿', region: 'Asia-Pacific' },
+  // Middle East expanded
+  { city: 'Riyadh',          country: 'Saudi Arabia',  tz: 'Asia/Riyadh',             flag: '🇸🇦', region: 'Middle East' },
+  { city: 'Jeddah',          country: 'Saudi Arabia',  tz: 'Asia/Riyadh',             flag: '🇸🇦', region: 'Middle East' },
+  { city: 'Doha',            country: 'Qatar',         tz: 'Asia/Qatar',              flag: '🇶🇦', region: 'Middle East' },
+  { city: 'Kuwait City',     country: 'Kuwait',        tz: 'Asia/Kuwait',             flag: '🇰🇼', region: 'Middle East' },
+  { city: 'Muscat',          country: 'Oman',          tz: 'Asia/Muscat',             flag: '🇴🇲', region: 'Middle East' },
+  { city: 'Bahrain',         country: 'Bahrain',       tz: 'Asia/Bahrain',            flag: '🇧🇭', region: 'Middle East' },
+  { city: 'Tel Aviv',        country: 'Israel',        tz: 'Asia/Jerusalem',          flag: '🇮🇱', region: 'Middle East' },
+  { city: 'Istanbul',        country: 'Turkey',        tz: 'Europe/Istanbul',         flag: '🇹🇷', region: 'Middle East' },
+  { city: 'Cairo',           country: 'Egypt',         tz: 'Africa/Cairo',            flag: '🇪🇬', region: 'Middle East' },
+  { city: 'Beirut',          country: 'Lebanon',       tz: 'Asia/Beirut',             flag: '🇱🇧', region: 'Middle East' },
+  { city: 'Amman',           country: 'Jordan',        tz: 'Asia/Amman',              flag: '🇯🇴', region: 'Middle East' },
+  // Europe expanded
+  { city: 'Paris',           country: 'France',        tz: 'Europe/Paris',            flag: '🇫🇷', region: 'Europe' },
+  { city: 'Berlin',          country: 'Germany',       tz: 'Europe/Berlin',           flag: '🇩🇪', region: 'Europe' },
+  { city: 'Munich',          country: 'Germany',       tz: 'Europe/Berlin',           flag: '🇩🇪', region: 'Europe' },
+  { city: 'Madrid',          country: 'Spain',         tz: 'Europe/Madrid',           flag: '🇪🇸', region: 'Europe' },
+  { city: 'Barcelona',       country: 'Spain',         tz: 'Europe/Madrid',           flag: '🇪🇸', region: 'Europe' },
+  { city: 'Rome',            country: 'Italy',         tz: 'Europe/Rome',             flag: '🇮🇹', region: 'Europe' },
+  { city: 'Milan',           country: 'Italy',         tz: 'Europe/Rome',             flag: '🇮🇹', region: 'Europe' },
+  { city: 'Brussels',        country: 'Belgium',       tz: 'Europe/Brussels',         flag: '🇧🇪', region: 'Europe' },
+  { city: 'Vienna',          country: 'Austria',       tz: 'Europe/Vienna',           flag: '🇦🇹', region: 'Europe' },
+  { city: 'Stockholm',       country: 'Sweden',        tz: 'Europe/Stockholm',        flag: '🇸🇪', region: 'Europe' },
+  { city: 'Oslo',            country: 'Norway',        tz: 'Europe/Oslo',             flag: '🇳🇴', region: 'Europe' },
+  { city: 'Copenhagen',      country: 'Denmark',       tz: 'Europe/Copenhagen',       flag: '🇩🇰', region: 'Europe' },
+  { city: 'Helsinki',        country: 'Finland',       tz: 'Europe/Helsinki',         flag: '🇫🇮', region: 'Europe' },
+  { city: 'Warsaw',          country: 'Poland',        tz: 'Europe/Warsaw',           flag: '🇵🇱', region: 'Europe' },
+  { city: 'Prague',          country: 'Czech Republic',tz: 'Europe/Prague',           flag: '🇨🇿', region: 'Europe' },
+  { city: 'Dublin',          country: 'Ireland',       tz: 'Europe/Dublin',           flag: '🇮🇪', region: 'Europe' },
+  { city: 'Lisbon',          country: 'Portugal',      tz: 'Europe/Lisbon',           flag: '🇵🇹', region: 'Europe' },
+  { city: 'Athens',          country: 'Greece',        tz: 'Europe/Athens',           flag: '🇬🇷', region: 'Europe' },
+  // Americas expanded
+  { city: 'Toronto',         country: 'Canada',        tz: 'America/Toronto',         flag: '🇨🇦', region: 'Americas' },
+  { city: 'Vancouver',       country: 'Canada',        tz: 'America/Vancouver',       flag: '🇨🇦', region: 'Americas' },
+  { city: 'Montreal',        country: 'Canada',        tz: 'America/Toronto',         flag: '🇨🇦', region: 'Americas' },
+  { city: 'Boston',          country: 'USA',           tz: 'America/New_York',        flag: '🇺🇸', region: 'Americas' },
+  { city: 'Washington DC',   country: 'USA',           tz: 'America/New_York',        flag: '🇺🇸', region: 'Americas' },
+  { city: 'Miami',           country: 'USA',           tz: 'America/New_York',        flag: '🇺🇸', region: 'Americas' },
+  { city: 'Atlanta',         country: 'USA',           tz: 'America/New_York',        flag: '🇺🇸', region: 'Americas' },
+  { city: 'Dallas',          country: 'USA',           tz: 'America/Chicago',         flag: '🇺🇸', region: 'Americas' },
+  { city: 'Houston',         country: 'USA',           tz: 'America/Chicago',         flag: '🇺🇸', region: 'Americas' },
+  { city: 'Austin',          country: 'USA',           tz: 'America/Chicago',         flag: '🇺🇸', region: 'Americas' },
+  { city: 'Denver',          country: 'USA',           tz: 'America/Denver',          flag: '🇺🇸', region: 'Americas' },
+  { city: 'Seattle',         country: 'USA',           tz: 'America/Los_Angeles',     flag: '🇺🇸', region: 'Americas' },
+  { city: 'Los Angeles',     country: 'USA',           tz: 'America/Los_Angeles',     flag: '🇺🇸', region: 'Americas' },
+  { city: 'São Paulo',       country: 'Brazil',        tz: 'America/Sao_Paulo',       flag: '🇧🇷', region: 'Americas' },
+  { city: 'Mexico City',     country: 'Mexico',        tz: 'America/Mexico_City',     flag: '🇲🇽', region: 'Americas' },
+  // Africa
+  { city: 'Lagos',           country: 'Nigeria',       tz: 'Africa/Lagos',            flag: '🇳🇬', region: 'Africa' },
+  { city: 'Nairobi',         country: 'Kenya',         tz: 'Africa/Nairobi',          flag: '🇰🇪', region: 'Africa' },
+  { city: 'Johannesburg',    country: 'South Africa',  tz: 'Africa/Johannesburg',     flag: '🇿🇦', region: 'Africa' },
+  { city: 'Cape Town',       country: 'South Africa',  tz: 'Africa/Johannesburg',     flag: '🇿🇦', region: 'Africa' },
+  { city: 'Accra',           country: 'Ghana',         tz: 'Africa/Accra',            flag: '🇬🇭', region: 'Africa' },
+  { city: 'Casablanca',      country: 'Morocco',       tz: 'Africa/Casablanca',       flag: '🇲🇦', region: 'Africa' },
+]
+
+const REGION_ORDER = ['Asia-Pacific', 'Middle East', 'Europe', 'Americas', 'Africa']
 
 type MarketStatus = 'prime' | 'working' | 'early' | 'late' | 'off' | 'weekend'
 
@@ -2795,25 +2884,52 @@ const STATUS_STYLE: Record<MarketStatus, { dot: string; badge: string; label: st
   weekend: { dot: 'bg-gray-300',                badge: 'bg-gray-50 text-gray-400 border-gray-200',     label: '🏖️ Weekend' },
 }
 
-const REGION_ORDER = ['Asia-Pacific', 'Middle East', 'Europe', 'Americas']
-
 function WorldClockTab() {
   const [now, setNow] = useState(() => new Date())
+  const [customCities, setCustomCities] = useState<ClockMarket[]>(() => {
+    try { return JSON.parse(localStorage.getItem('worldclock_custom') ?? '[]') }
+    catch { return [] }
+  })
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000)
     return () => clearInterval(id)
   }, [])
 
-  // Compute all market info (re-evaluates on `now` tick)
-  type MarketWithInfo = (typeof CLOCK_MARKETS)[number] & { home?: boolean } & ReturnType<typeof getMarketInfo>
-  const markets = CLOCK_MARKETS.map(m => ({ ...m, ...getMarketInfo(m.tz) })) as MarketWithInfo[]
+  const activeCityNames = new Set([...CLOCK_MARKETS.map(m => m.city), ...customCities.map(m => m.city)])
+
+  const addCity = (c: ClockMarket) => {
+    const next = [...customCities, c]
+    setCustomCities(next)
+    localStorage.setItem('worldclock_custom', JSON.stringify(next))
+    setSearchQ(''); setShowSearch(false)
+  }
+
+  const removeCity = (cityName: string) => {
+    const next = customCities.filter(c => c.city !== cityName)
+    setCustomCities(next)
+    localStorage.setItem('worldclock_custom', JSON.stringify(next))
+  }
+
+  const catalogResults = searchQ.length >= 1
+    ? CITY_CATALOG.filter(c =>
+        !activeCityNames.has(c.city) &&
+        (c.city.toLowerCase().includes(searchQ.toLowerCase()) ||
+         c.country.toLowerCase().includes(searchQ.toLowerCase()))
+      ).slice(0, 8)
+    : []
+
+  const allMarketDefs: ClockMarket[] = [...CLOCK_MARKETS, ...customCities]
+  const markets = allMarketDefs.map(m => ({ ...m, ...getMarketInfo(m.tz) }))
   const homeMarket = markets.find(m => m.home)!
 
-  const openMarkets   = markets.filter(m => !m.home && (m.status === 'prime' || m.status === 'working'))
-  const primeMarkets  = markets.filter(m => !m.home && m.status === 'prime')
+  const openMarkets  = markets.filter(m => !m.home && (m.status === 'prime' || m.status === 'working'))
+  const primeMarkets = markets.filter(m => !m.home && m.status === 'prime')
 
-  const regions = REGION_ORDER.map(region => ({
+  const activeRegions = REGION_ORDER.filter(r => markets.some(m => m.region === r && !m.home))
+  const regions = activeRegions.map(region => ({
     region,
     items: markets.filter(m => m.region === region && !m.home),
   }))
@@ -2827,7 +2943,7 @@ function WorldClockTab() {
 
   return (
     <div className="space-y-5">
-      {/* Header — home time + status banner */}
+      {/* Header — home time + status banner + add city button */}
       <div className="card bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -2837,9 +2953,15 @@ function WorldClockTab() {
               {now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}
             </p>
           </div>
-          <div className="text-right">
+          <div className="flex flex-col items-end gap-2">
+            <button
+              onClick={() => { setShowSearch(s => !s); setSearchQ('') }}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            >
+              <Plus size={13} />{showSearch ? 'Tutup' : 'Tambah Kota'}
+            </button>
             {primeMarkets.length > 0 ? (
-              <div className="space-y-1">
+              <div className="space-y-1 text-right">
                 <p className="text-xs font-semibold text-green-700">⭐ Prime time apply sekarang:</p>
                 <div className="flex flex-wrap gap-1 justify-end">
                   {primeMarkets.map(m => (
@@ -2864,6 +2986,47 @@ function WorldClockTab() {
           </div>
         </div>
       </div>
+
+      {/* City search panel */}
+      {showSearch && (
+        <div className="card border-primary/20 bg-white">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Cari & tambah kota</p>
+          <input
+            autoFocus
+            type="text"
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
+            placeholder="Ketik nama kota atau negara... (cth: Bangalore, India)"
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40"
+          />
+          {searchQ.length >= 1 && (
+            <div className="mt-2 space-y-1">
+              {catalogResults.length === 0 ? (
+                <p className="text-xs text-gray-400 py-1">Tidak ditemukan di katalog</p>
+              ) : catalogResults.map(c => (
+                <button
+                  key={c.city}
+                  onClick={() => addCity(c)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-primary/5 text-left transition-colors group"
+                >
+                  <span className="text-lg">{c.flag}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-gray-800">{c.city}</span>
+                    <span className="text-xs text-gray-400 ml-1.5">{c.country}</span>
+                  </div>
+                  <span className="text-[10px] text-gray-400 shrink-0">{c.region}</span>
+                  <Plus size={13} className="text-primary opacity-0 group-hover:opacity-100 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+          {searchQ.length === 0 && (
+            <p className="text-[11px] text-gray-400 mt-2">
+              {CITY_CATALOG.filter(c => !activeCityNames.has(c.city)).length} kota tersedia · ketik untuk mencari
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 24h Timeline */}
       <div className="card overflow-x-auto">
@@ -2934,12 +3097,22 @@ function WorldClockTab() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {items.map(m => {
               const st = STATUS_STYLE[m.status]
+              const isCustom = customCities.some(c => c.city === m.city)
               return (
                 <div key={m.city}
-                  className={`card py-3 px-4 border transition-all ${m.status === 'prime' ? 'border-green-300 bg-green-50/30' : m.status === 'working' ? 'border-green-100' : 'border-gray-100 opacity-70'}`}>
+                  className={`card py-3 px-4 border transition-all relative ${m.status === 'prime' ? 'border-green-300 bg-green-50/30' : m.status === 'working' ? 'border-green-100' : 'border-gray-100 opacity-70'}`}>
+                  {isCustom && (
+                    <button
+                      onClick={() => removeCity(m.city)}
+                      className="absolute top-2 right-2 w-5 h-5 rounded-full bg-gray-100 hover:bg-red-100 hover:text-red-500 flex items-center justify-center text-gray-400 transition-colors"
+                      title="Hapus kota"
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
                   <div className="flex items-start justify-between mb-1">
                     <span className="text-xl">{m.flag}</span>
-                    <span className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${st.badge}`}>
+                    <span className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${st.badge} ${isCustom ? 'mr-5' : ''}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
                       {st.label}
                     </span>
