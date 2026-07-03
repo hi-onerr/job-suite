@@ -12,6 +12,8 @@ import {
   RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X,
 } from 'lucide-react'
 import { exportPdf, exportDocx, exportFileName, guessCandidateName, getPdfBlob, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
+import dynamic from 'next/dynamic'
+const JobMapView = dynamic(() => import('./components/JobMapView'), { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm text-gray-400">Memuat peta...</div> })
 import { showError, showSuccess, showToast } from './lib/notify'
 
 // ── API KEY PROVIDERS ─────────────────────────────────────────────────────────
@@ -906,7 +908,7 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
 }) {
   const [filter, setFilter] = useState('all')
   const [regionFilter, setRegionFilter] = useState('all')
-  const [viewMode, setViewMode] = useState<'list' | 'board' | 'calendar'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'board' | 'calendar' | 'map'>('list')
   const [modalJobId, setModalJobId] = useState<string | null>(null)
   const modalJob = jobs.find(j => j.id === modalJobId) || null
   const [dateFrom, setDateFrom] = useState('')
@@ -1000,6 +1002,9 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
         <button onClick={() => setViewMode('board')} className={`px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'board' ? 'bg-primary text-white' : 'text-gray-600 hover:text-primary'}`}>Board</button>
         <button onClick={() => setViewMode('calendar')} className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'calendar' ? 'bg-primary text-white' : 'text-gray-600 hover:text-primary'}`}>
           <CalendarDays size={13} /> Kalender
+        </button>
+        <button onClick={() => setViewMode('map')} className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'map' ? 'bg-primary text-white' : 'text-gray-600 hover:text-primary'}`}>
+          <Globe size={13} /> Peta
         </button>
       </div>
       {viewMode === 'board' && <p className="text-xs text-gray-400">Seret kartu antar kolom untuk ubah status</p>}
@@ -1165,6 +1170,8 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
     </div>
     ) : viewMode === 'board' ? (
       <KanbanBoard jobs={jobs} onUpdate={onUpdate} onOpen={setModalJobId} />
+    ) : viewMode === 'map' ? (
+      <JobMapView jobs={filtered} onOpen={setModalJobId} />
     ) : (
       <CalendarView jobs={jobs} onSelect={job => { onSelect(job); setViewMode('list') }} />
     )}
