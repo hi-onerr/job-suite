@@ -1606,6 +1606,9 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [scoring, setScoring] = useState(false)
   const [improve, setImprove] = useState<CvImprovement | null>(null)
   const [improving, setImproving] = useState(false)
+  // AbortControllers for cancellable in-flight requests
+  const genAbortRef = useRef<AbortController | null>(null)
+  const improveAbortRef = useRef<AbortController | null>(null)
   // Track the previous CV version so user can revert if score drops after regenerate
   const [prevContent, setPrevContent] = useState<string | null>(null)
   const [prevAtsScore, setPrevAtsScore] = useState<number | null>(null)
@@ -1617,24 +1620,29 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
 
   const runImprove = async () => {
     if (!jobDesc || !profile) return
+    improveAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    improveAbortRef.current = ctrl
     setImproving(true)
     setImprove(null)
 
     const slowTimer = setTimeout(() => {
-      showToast('AI sedang menganalisis CV-mu... biasanya 15–30 detik, mohon tunggu', 'info', 8000)
+      if (!ctrl.signal.aborted)
+        showToast('AI sedang menganalisis CV-mu... biasanya 15–30 detik, mohon tunggu', 'info', 8000)
     }, 8000)
 
     try {
       const res = await fetch('/api/improve-cv', {
         method: 'POST', headers: JSON_HEADERS,
         body: JSON.stringify({ jobDesc, profile, analysis }),
+        signal: ctrl.signal,
       })
       const data = await res.json()
       if (!res.ok) { showError(data.error || 'Gagal membuat saran.'); return }
       setImprove(data)
       showToast('Saran perbaikan CV siap!', 'success')
-    } catch {
-      showError('Gagal membuat saran. Periksa koneksi atau API key.')
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') showError('Gagal membuat saran. Periksa koneksi atau API key.')
     } finally {
       clearTimeout(slowTimer)
       setImproving(false)
@@ -1699,6 +1707,9 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
 
   const generate = async (type: DocType) => {
     if (!jobDesc) return
+    genAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    genAbortRef.current = ctrl
     // Save current CV before overwriting so user can revert if score drops
     if (type === 'cv' && generatedContent) {
       setPrevContent(generatedContent)
@@ -1711,7 +1722,8 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
 
     // Notify if AI is taking >10s
     const slowTimer = setTimeout(() => {
-      showToast('Masih proses... AI sedang berpikir keras, mohon tunggu sebentar', 'info', 7000)
+      if (!ctrl.signal.aborted)
+        showToast('Masih proses... AI sedang berpikir keras, mohon tunggu sebentar', 'info', 7000)
     }, 10000)
 
     try {
@@ -1719,6 +1731,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ type, jobDesc, company, role, location, profile, analysis }),
+        signal: ctrl.signal,
       })
       const data = await res.json()
       if (!res.ok) { showError(data.error || 'Generation failed.'); return }
@@ -1726,8 +1739,8 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
       upsert(type, data.content)
       if (type === 'cv') rescore(data.content)
       showToast(`${DOC_LABEL[type]} selesai dibuat!`, 'success')
-    } catch (e) {
-      showError('Generation failed. Periksa koneksi atau API key.')
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') showError('Generation failed. Periksa koneksi atau API key.')
     } finally {
       clearTimeout(slowTimer)
       setGenLoading(false)
@@ -1781,10 +1794,20 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
             <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5">
               <Sparkles size={14} className="text-accent" /> Perbaiki CV-ku
             </p>
-            <button onClick={runImprove} disabled={improving} className="btn-accent text-xs flex items-center gap-1.5">
-              {improving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              {improving ? 'Menganalisis CV...' : improve ? 'Analisis ulang' : 'Kasih saran'}
-            </button>
+            <div className="flex items-center gap-2">
+              {improving ? (
+                <button
+                  onClick={() => { improveAbortRef.current?.abort(); setImproving(false) }}
+                  className="text-xs text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-300 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  ✕ Batalkan
+                </button>
+              ) : null}
+              <button onClick={runImprove} disabled={improving} className="btn-accent text-xs flex items-center gap-1.5">
+                {improving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {improving ? 'Menganalisis CV...' : improve ? 'Analisis ulang' : 'Kasih saran'}
+              </button>
+            </div>
           </div>
           <p className="text-xs text-gray-500 mt-1">Saran konkret + ringkasan yang ditulis ulang agar lebih cocok dengan lowongan ini.</p>
 
@@ -1833,7 +1856,13 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
       {genLoading && (
         <div className="text-center py-8">
           <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
-          <p className="text-sm text-gray-500">Generating with AI...</p>
+          <p className="text-sm text-gray-500 mb-3">Generating with AI...</p>
+          <button
+            onClick={() => { genAbortRef.current?.abort(); setGenLoading(false) }}
+            className="text-xs text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-300 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            ✕ Batalkan
+          </button>
         </div>
       )}
 

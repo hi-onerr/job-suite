@@ -58,15 +58,22 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
     const cleaned = analysisText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)
 
-    // Build grounded salaryRange from search result; fall back to "—"
+    // Build grounded salaryRange from search result — no extra Gemini call
     if (!isRescore) {
       if (salarySearch?.text) {
-        // Ask Gemini to extract a clean range string from the search text
-        const extract = await generateText(genAI,
-          `Based on this salary search result, output ONLY a single salary range string in this exact format: "IDR X – Y / bulan (gross)" or "SGD X – Y / month (gross)". No explanation, no markdown.\n\nSearch result:\n${salarySearch.text.slice(0, 1000)}`
-        ).catch(() => '')
-        const range = extract.replace(/```[\s\S]*?```/g, '').trim()
-        data.salaryRange = range || null
+        // Extract range with regex: look for "X,XXX,XXX – Y,YYY,YYY" or "X.X jt – Y.Y jt" patterns
+        const t = salarySearch.text
+        const cur = location === 'Indonesia' ? 'IDR' : location.match(/singapore/i) ? 'SGD' : location.match(/malaysia/i) ? 'MYR' : location.match(/australia/i) ? 'AUD' : location.match(/usa|united states/i) ? 'USD' : location.match(/uk|united kingdom/i) ? 'GBP' : 'local currency'
+        // Try "X,XXX,XXX to/– Y,YYY,YYY" or "Rp X to/– Rp Y" or "X juta – Y juta"
+        const rangeMatch = t.match(/(?:Rp\.?\s*)?([\d,\.]+(?:\s*(?:juta|jt|million|k))?)\s*(?:to|-|–)\s*(?:Rp\.?\s*)?([\d,\.]+(?:\s*(?:juta|jt|million|k))?)/i)
+        if (rangeMatch) {
+          const clean = (v: string) => v.trim().replace(/\.$/, '')
+          data.salaryRange = `${cur} ${clean(rangeMatch[1])} – ${clean(rangeMatch[2])} / bulan (gross)`
+        } else {
+          // Fallback: use first 120 chars that look like a salary statement
+          const snip = t.slice(0, 300).replace(/\n/g, ' ').trim()
+          data.salaryRange = snip.length > 20 ? snip.slice(0, 120) : null
+        }
         data._salarySource = salarySearch.sources?.[0]?.url || null
       } else {
         data.salaryRange = null
