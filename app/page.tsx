@@ -11,7 +11,7 @@ import {
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
   RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X,
 } from 'lucide-react'
-import { exportPdf, exportDocx, exportFileName, guessCandidateName, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
+import { exportPdf, exportDocx, exportFileName, guessCandidateName, getPdfBlob, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
 
 // ── API KEY PROVIDERS ─────────────────────────────────────────────────────────
@@ -1607,6 +1607,9 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [prevAtsScore, setPrevAtsScore] = useState<number | null>(null)
   // Monotonic counter to discard stale rescore results when user regenerates quickly
   const rescoreGen = useRef(0)
+  // PDF preview modal
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; blob: Blob } | null>(null)
+  const [pdfGenerating, setPdfGenerating] = useState(false)
 
   const runImprove = async () => {
     if (!jobDesc || !profile) return
@@ -1849,12 +1852,22 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
               >
                 <ClipboardCopy size={12} /> Copy
               </button>
-              {/* PDF — red gradient pill */}
+              {/* PDF — preview modal before download */}
               <button
-                onClick={() => exportPdf(generatedContent, exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile)), activeGen!)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all"
+                disabled={pdfGenerating}
+                onClick={async () => {
+                  setPdfGenerating(true)
+                  try {
+                    const fileName = exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile))
+                    const blob = await getPdfBlob(generatedContent, activeGen!)
+                    const url = URL.createObjectURL(blob)
+                    setPdfPreview({ url, fileName: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`, blob })
+                  } catch { showError('Gagal membuat preview PDF.') }
+                  finally { setPdfGenerating(false) }
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Download size={12} /> PDF
+                {pdfGenerating ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Generating...</> : <><Download size={12} /> PDF</>}
               </button>
               {/* DOCX — blue gradient pill */}
               <button
@@ -1955,6 +1968,47 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
               <CheckCircle size={12} /> Tersimpan ke lamaran ini
             </p>
           )}
+        </div>
+      )}
+
+      {/* PDF Preview Modal */}
+      {pdfPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-3xl" style={{ height: '90vh' }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText size={15} className="text-rose-500 shrink-0" />
+                <span className="text-sm font-semibold text-gray-800 truncate">{pdfPreview.fileName}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a')
+                    a.href = pdfPreview.url
+                    a.download = pdfPreview.fileName
+                    a.click()
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 px-4 py-2 rounded-lg transition-all shadow-sm"
+                >
+                  <Download size={13} /> Download PDF
+                </button>
+                <button
+                  onClick={() => { URL.revokeObjectURL(pdfPreview.url); setPdfPreview(null) }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Tutup"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            {/* iframe preview */}
+            <iframe
+              src={pdfPreview.url}
+              className="flex-1 w-full rounded-b-2xl"
+              title="PDF Preview"
+            />
+          </div>
         </div>
       )}
     </div>

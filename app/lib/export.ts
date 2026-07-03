@@ -299,7 +299,7 @@ function genericPdfContent(text: string): any[] {
   return c
 }
 
-export async function exportPdf(text: string, fileName: string, kind: DocKind = 'cv') {
+async function loadPdfMake() {
   // @ts-ignore — pdfmake build paths ship without bundled type declarations
   const pdfMakeMod = await import('pdfmake/build/pdfmake')
   // @ts-ignore
@@ -307,19 +307,25 @@ export async function exportPdf(text: string, fileName: string, kind: DocKind = 
   const pdfMake: any = (pdfMakeMod as any).default || pdfMakeMod
   const vfsAny: any = (vfsMod as any).default || vfsMod
   pdfMake.vfs = vfsAny.pdfMake?.vfs || vfsAny.vfs || vfsAny
+  return pdfMake
+}
 
+function buildDocDefinition(text: string, kind: DocKind) {
   let content: any[]
   if (kind === 'cv') { const cv = parseCv(text); content = cv ? cvPdfContent(cv) : genericPdfContent(text) }
   else if (kind === 'coverletter') { const cl = parseCoverLetter(text); content = cl ? coverLetterPdfContent(cl) : genericPdfContent(text) }
   else content = genericPdfContent(text)
+  return { pageSize: 'A4', pageMargins: [40, 36, 40, 40], defaultStyle: { fontSize: 9.5, lineHeight: 1.13, color: '#1a1a1a' }, content }
+}
 
-  const docDefinition = {
-    pageSize: 'A4',
-    pageMargins: [40, 36, 40, 40],
-    defaultStyle: { fontSize: 9.5, lineHeight: 1.13, color: '#1a1a1a' },
-    content,
-  }
-  pdfMake.createPdf(docDefinition).download(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`)
+export async function getPdfBlob(text: string, kind: DocKind = 'cv'): Promise<Blob> {
+  const pdfMake = await loadPdfMake()
+  return new Promise<Blob>(resolve => pdfMake.createPdf(buildDocDefinition(text, kind)).getBlob(resolve))
+}
+
+export async function exportPdf(text: string, fileName: string, kind: DocKind = 'cv') {
+  const pdfMake = await loadPdfMake()
+  pdfMake.createPdf(buildDocDefinition(text, kind)).download(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`)
 }
 
 // ── DOCX ────────────────────────────────────────────────────────────────────
