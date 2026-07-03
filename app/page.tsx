@@ -118,6 +118,7 @@ interface AnalysisResult {
   gaps?: string[]
   recommendation?: string
   salaryRange?: string
+  _salarySource?: string | null
   keywordsToAdd?: string[]
 }
 
@@ -2118,7 +2119,7 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, onGoToPr
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: JSON_HEADERS,
-        body: JSON.stringify({ jobDesc, profile })
+        body: JSON.stringify({ jobDesc, profile, company, role })
       })
       const data = await res.json()
       if (!res.ok) {
@@ -2317,7 +2318,15 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, onGoToPr
 
             {result.salaryRange && (
               <div className="mt-3 bg-green-50 rounded-lg p-3">
-                <p className="text-xs font-medium text-green-700 mb-0.5">Estimasi Gaji</p>
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <p className="text-xs font-medium text-green-700">Estimasi Gaji</p>
+                  {result._salarySource && (
+                    <a href={result._salarySource} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] text-green-600 hover:underline flex items-center gap-0.5">
+                      <ExternalLink size={9} /> sumber live
+                    </a>
+                  )}
+                </div>
                 <p className="text-sm font-bold text-green-800">{result.salaryRange}</p>
                 {!/bulan|month|tahun|year|annual/i.test(result.salaryRange) && (
                   <p className="text-[10px] text-green-600 mt-0.5">gross · per bulan (estimasi)</p>
