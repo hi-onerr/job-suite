@@ -905,6 +905,7 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
   onGoToSearch: () => void
 }) {
   const [filter, setFilter] = useState('all')
+  const [regionFilter, setRegionFilter] = useState('all')
   const [viewMode, setViewMode] = useState<'list' | 'board' | 'calendar'>('list')
   const [modalJobId, setModalJobId] = useState<string | null>(null)
   const modalJob = jobs.find(j => j.id === modalJobId) || null
@@ -923,13 +924,39 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
 
   const jobDate = (j: JobApplication) => (j.appliedDate || j.createdAt || '').slice(0, 10)
 
+  const detectRegion = (loc: string): string => {
+    const l = (loc || '').toLowerCase()
+    if (!l || l === 'unknown') return 'unknown'
+    if (/remote|wfh|work from home|fully remote/i.test(l)) return 'remote'
+    if (/indonesia|jakarta|surabaya|bandung|bali|yogyakarta|semarang|medan|depok|bekasi|tangerang/i.test(l)) return 'indonesia'
+    if (/singapore|malaysia|kuala lumpur|thailand|bangkok|vietnam|ho chi minh|hanoi|philippines|manila|japan|tokyo|korea|seoul|taiwan|taipei|hong kong|australia|sydney|melbourne|perth|brisbane|india|bangalore|mumbai|delhi|hyderabad|chennai|new zealand|auckland/i.test(l)) return 'apac'
+    if (/dubai|uae|abu dhabi|saudi|riyadh|jeddah|qatar|doha|kuwait|bahrain|oman|muscat|israel|tel aviv|turkey|istanbul|egypt|cairo|jordan|lebanon|beirut/i.test(l)) return 'middleeast'
+    if (/uk|united kingdom|london|manchester|edinburgh|france|paris|germany|berlin|munich|frankfurt|netherlands|amsterdam|switzerland|zurich|sweden|stockholm|norway|oslo|denmark|copenhagen|finland|helsinki|belgium|brussels|austria|vienna|spain|madrid|barcelona|italy|rome|milan|portugal|lisbon|poland|warsaw|ireland|dublin|europe/i.test(l)) return 'europe'
+    if (/usa|united states|new york|san francisco|los angeles|chicago|seattle|boston|austin|denver|miami|dallas|houston|washington|canada|toronto|vancouver|montreal|mexico|brazil|sao paulo|buenos aires/i.test(l)) return 'americas'
+    return 'other'
+  }
+
+  const REGIONS: { id: string; label: string; flag: string }[] = [
+    { id: 'all',         label: 'Semua',        flag: '🌐' },
+    { id: 'indonesia',   label: 'Indonesia',     flag: '🇮🇩' },
+    { id: 'remote',      label: 'Remote',        flag: '💻' },
+    { id: 'apac',        label: 'Asia-Pacific',  flag: '🌏' },
+    { id: 'middleeast',  label: 'Middle East',   flag: '🕌' },
+    { id: 'europe',      label: 'Europe',        flag: '🇪🇺' },
+    { id: 'americas',    label: 'Amerika',       flag: '🌎' },
+    { id: 'other',       label: 'Lainnya',       flag: '📍' },
+  ]
+
   const filtered = jobs.filter(j => {
     if (filter !== 'all' && j.status !== filter) return false
+    if (regionFilter !== 'all' && detectRegion(j.location) !== regionFilter) return false
     const d = jobDate(j)
     if (dateFrom && d < dateFrom) return false
     if (dateTo && d > dateTo) return false
     return true
   })
+
+  const regionCount = (id: string) => id === 'all' ? jobs.length : jobs.filter(j => detectRegion(j.location) === id).length
 
   const count = (s: string) => jobs.filter(j => j.status === s).length
   const avgMatch = jobs.length
@@ -1002,6 +1029,27 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
               }`}
             >
               {s === 'all' ? `All (${jobs.length})` : `${s} (${jobs.filter(j => j.status === s).length})`}
+            </button>
+          ))}
+        </div>
+
+        {/* Region filter */}
+        <div className="flex gap-1 mb-3 flex-wrap">
+          {REGIONS.filter(r => r.id === 'all' || regionCount(r.id) > 0).map(r => (
+            <button
+              key={r.id}
+              onClick={() => setRegionFilter(r.id)}
+              className={`text-xs px-2.5 py-1 rounded-full transition-colors flex items-center gap-1 ${
+                regionFilter === r.id
+                  ? 'bg-accent text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:border-accent/60'
+              }`}
+            >
+              <span>{r.flag}</span>
+              {r.label}
+              <span className={`text-[10px] ml-0.5 ${regionFilter === r.id ? 'text-white/80' : 'text-gray-400'}`}>
+                ({regionCount(r.id)})
+              </span>
             </button>
           ))}
         </div>
