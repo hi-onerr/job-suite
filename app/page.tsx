@@ -9,7 +9,7 @@ import {
   AlertCircle, Upload, User, Settings, Key, LogOut, LogIn,
   Sparkles, TrendingUp, Target, Send, Award, MapPin, Phone, Linkedin, GraduationCap, Lightbulb,
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
-  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft,
+  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe,
 } from 'lucide-react'
 import { exportPdf, exportDocx, exportFileName, guessCandidateName, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
@@ -139,6 +139,7 @@ const TABS: Tab[] = [
   { id: 'search', label: 'Cari Loker', subtitle: 'Temukan lowongan yang cocok & simpan sekali klik', icon: <Search size={18} /> },
   { id: 'analyze', label: 'Analyze & Generate', subtitle: 'Cek kecocokan & buat dokumen lamaran dengan AI', icon: <BarChart2 size={18} /> },
   { id: 'prep', label: 'Interview Prep', subtitle: 'Riset perusahaan & latihan pertanyaan interview', icon: <Brain size={18} /> },
+  { id: 'worldclock', label: 'World Clock', subtitle: 'Jam kerja global — waktu terbaik apply loker luar negeri', icon: <Globe size={18} /> },
   { id: 'profile', label: 'My Profile', subtitle: 'CV & profil yang dipakai AI sebagai konteks', icon: <User size={18} /> },
   { id: 'settings', label: 'Settings', subtitle: 'API key & impor data', icon: <Settings size={18} /> },
 ]
@@ -569,6 +570,7 @@ function AppShell() {
                   onGoToSettings={() => setActiveTab('settings')}
                 />
               )}
+              {activeTab === 'worldclock' && <WorldClockTab />}
               {activeTab === 'settings' && (
                 <SettingsTab configuredKeys={configuredKeys} onSaved={refreshKeys} />
               )}
@@ -2731,6 +2733,250 @@ function SalaryInsightCard({ prep }: { prep: PrepResult }) {
           </ul>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── WORLD CLOCK TAB ──────────────────────────────────────────────────────────
+
+const CLOCK_MARKETS = [
+  // Asia-Pacific
+  { city: 'Jakarta',       country: 'Indonesia', tz: 'Asia/Jakarta',       flag: '🇮🇩', region: 'Asia-Pacific', home: true },
+  { city: 'Singapore',     country: 'Singapore', tz: 'Asia/Singapore',     flag: '🇸🇬', region: 'Asia-Pacific' },
+  { city: 'Kuala Lumpur',  country: 'Malaysia',  tz: 'Asia/Kuala_Lumpur',  flag: '🇲🇾', region: 'Asia-Pacific' },
+  { city: 'Tokyo',         country: 'Japan',     tz: 'Asia/Tokyo',         flag: '🇯🇵', region: 'Asia-Pacific' },
+  { city: 'Seoul',         country: 'Korea',     tz: 'Asia/Seoul',         flag: '🇰🇷', region: 'Asia-Pacific' },
+  { city: 'Sydney',        country: 'Australia', tz: 'Australia/Sydney',   flag: '🇦🇺', region: 'Asia-Pacific' },
+  // Middle East
+  { city: 'Dubai',         country: 'UAE',       tz: 'Asia/Dubai',         flag: '🇦🇪', region: 'Middle East' },
+  { city: 'Abu Dhabi',     country: 'UAE',       tz: 'Asia/Dubai',         flag: '🇦🇪', region: 'Middle East' },
+  // Europe
+  { city: 'London',        country: 'UK',        tz: 'Europe/London',      flag: '🇬🇧', region: 'Europe' },
+  { city: 'Amsterdam',     country: 'Netherlands', tz: 'Europe/Amsterdam', flag: '🇳🇱', region: 'Europe' },
+  { city: 'Frankfurt',     country: 'Germany',   tz: 'Europe/Berlin',      flag: '🇩🇪', region: 'Europe' },
+  { city: 'Zurich',        country: 'Switzerland', tz: 'Europe/Zurich',    flag: '🇨🇭', region: 'Europe' },
+  // USA
+  { city: 'New York',      country: 'USA',       tz: 'America/New_York',   flag: '🇺🇸', region: 'Americas' },
+  { city: 'Chicago',       country: 'USA',       tz: 'America/Chicago',    flag: '🇺🇸', region: 'Americas' },
+  { city: 'San Francisco', country: 'USA',       tz: 'America/Los_Angeles',flag: '🇺🇸', region: 'Americas' },
+] as const
+
+type MarketStatus = 'prime' | 'working' | 'early' | 'late' | 'off' | 'weekend'
+
+function getMarketInfo(tz: string): { timeStr: string; hour: number; minute: number; dow: number; status: MarketStatus } {
+  const now = new Date()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', weekday: 'short', hour12: false,
+  }).formatToParts(now)
+
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? ''
+  const hour = parseInt(get('hour'))
+  const minute = parseInt(get('minute'))
+  const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(get('weekday'))
+  const timeStr = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`
+
+  let status: MarketStatus
+  if (dow === 0 || dow === 6) status = 'weekend'
+  else if (hour >= 10 && hour < 15) status = 'prime'     // 10 AM–3 PM sweet spot
+  else if (hour >= 8 && hour < 18) status = 'working'
+  else if (hour >= 7 && hour < 8) status = 'early'
+  else if (hour >= 18 && hour < 20) status = 'late'
+  else status = 'off'
+
+  return { timeStr, hour, minute, dow, status }
+}
+
+const STATUS_STYLE: Record<MarketStatus, { dot: string; badge: string; label: string }> = {
+  prime:   { dot: 'bg-green-500 animate-pulse', badge: 'bg-green-50 text-green-700 border-green-200',  label: '⭐ Prime Time' },
+  working: { dot: 'bg-green-400',               badge: 'bg-green-50 text-green-600 border-green-200',  label: '✓ Jam Kerja' },
+  early:   { dot: 'bg-amber-400',               badge: 'bg-amber-50 text-amber-700 border-amber-200',  label: '🌅 Awal Pagi' },
+  late:    { dot: 'bg-amber-400',               badge: 'bg-amber-50 text-amber-700 border-amber-200',  label: '🌆 Sore' },
+  off:     { dot: 'bg-gray-300',                badge: 'bg-gray-50 text-gray-400 border-gray-200',     label: '💤 Tutup' },
+  weekend: { dot: 'bg-gray-300',                badge: 'bg-gray-50 text-gray-400 border-gray-200',     label: '🏖️ Weekend' },
+}
+
+const REGION_ORDER = ['Asia-Pacific', 'Middle East', 'Europe', 'Americas']
+
+function WorldClockTab() {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Compute all market info (re-evaluates on `now` tick)
+  type MarketWithInfo = (typeof CLOCK_MARKETS)[number] & { home?: boolean } & ReturnType<typeof getMarketInfo>
+  const markets = CLOCK_MARKETS.map(m => ({ ...m, ...getMarketInfo(m.tz) })) as MarketWithInfo[]
+  const homeMarket = markets.find(m => m.home)!
+
+  const openMarkets   = markets.filter(m => !m.home && (m.status === 'prime' || m.status === 'working'))
+  const primeMarkets  = markets.filter(m => !m.home && m.status === 'prime')
+
+  const regions = REGION_ORDER.map(region => ({
+    region,
+    items: markets.filter(m => m.region === region && !m.home),
+  }))
+
+  // Timeline helpers — show 24h relative to current Jakarta hour
+  const jakartaHour = homeMarket.hour
+  const WORK_START = 8
+  const WORK_END = 18
+  const PRIME_START = 10
+  const PRIME_END = 15
+
+  return (
+    <div className="space-y-5">
+      {/* Header — home time + status banner */}
+      <div className="card bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <p className="text-xs text-gray-400 mb-0.5">Sekarang di Jakarta (WIB)</p>
+            <p className="text-4xl font-bold text-gray-900 tabular-nums tracking-tight">{homeMarket.timeStr}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}
+            </p>
+          </div>
+          <div className="text-right">
+            {primeMarkets.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-green-700">⭐ Prime time apply sekarang:</p>
+                <div className="flex flex-wrap gap-1 justify-end">
+                  {primeMarkets.map(m => (
+                    <span key={m.city} className="text-xs bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-medium">
+                      {m.flag} {m.city}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : openMarkets.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-gray-600">Jam kerja aktif di:</p>
+                <div className="flex flex-wrap gap-1 justify-end">
+                  {openMarkets.slice(0, 5).map(m => (
+                    <span key={m.city} className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">{m.flag} {m.city}</span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Semua market sedang tutup / weekend 💤</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 24h Timeline */}
+      <div className="card overflow-x-auto">
+        <p className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+          <Globe size={13} className="text-primary" /> Timeline 24 Jam — Jam Kerja per Kota
+          <span className="text-gray-400 font-normal ml-1">(garis oranye = sekarang di Jakarta)</span>
+        </p>
+        <div className="min-w-[560px]">
+          {/* Hour labels */}
+          <div className="flex mb-1 pl-28">
+            {Array.from({ length: 7 }, (_, i) => i * 4).map(h => (
+              <div key={h} className="flex-1 text-[10px] text-gray-400 text-center">{String(h).padStart(2,'0')}:00</div>
+            ))}
+            <div className="w-6" />
+          </div>
+
+          {/* Rows */}
+          {markets.map(m => {
+            const st = STATUS_STYLE[m.status]
+            return (
+              <div key={m.city} className="flex items-center gap-2 mb-1.5 group">
+                <div className="w-28 shrink-0 flex items-center gap-1.5">
+                  <span className="text-base">{m.flag}</span>
+                  <span className={`text-[11px] font-medium truncate ${m.home ? 'text-primary font-bold' : 'text-gray-700'}`}>{m.city}</span>
+                </div>
+                {/* 24h bar */}
+                <div className="flex-1 relative h-5 bg-gray-100 rounded overflow-hidden">
+                  {/* Working hours block */}
+                  <div
+                    className={`absolute top-0 h-full opacity-40 ${m.status === 'weekend' ? 'bg-gray-300' : 'bg-green-400'}`}
+                    style={{ left: `${(WORK_START / 24) * 100}%`, width: `${((WORK_END - WORK_START) / 24) * 100}%` }}
+                  />
+                  {/* Prime time block */}
+                  {m.status !== 'weekend' && (
+                    <div
+                      className="absolute top-0 h-full bg-green-500 opacity-60"
+                      style={{ left: `${(PRIME_START / 24) * 100}%`, width: `${((PRIME_END - PRIME_START) / 24) * 100}%` }}
+                    />
+                  )}
+                  {/* Current time marker */}
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-orange-500 z-10"
+                    style={{ left: `${((m.hour + m.minute / 60) / 24) * 100}%` }}
+                  />
+                  <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-600 tabular-nums z-10">
+                    {m.timeStr}
+                  </span>
+                </div>
+                {/* Status dot */}
+                <div className={`w-2 h-2 rounded-full shrink-0 ${st.dot}`} />
+              </div>
+            )
+          })}
+
+          {/* Legend */}
+          <div className="flex items-center gap-4 mt-3 pt-2 border-t border-gray-100 text-[10px] text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-green-400 rounded opacity-40 inline-block" />Jam kerja (08–18)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-green-500 rounded opacity-60 inline-block" />Prime time (10–15)</span>
+            <span className="flex items-center gap-1"><span className="w-0.5 h-3 bg-orange-500 inline-block" />Sekarang</span>
+          </div>
+        </div>
+      </div>
+
+      {/* City cards by region */}
+      {regions.map(({ region, items }) => (
+        <div key={region}>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{region}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {items.map(m => {
+              const st = STATUS_STYLE[m.status]
+              return (
+                <div key={m.city}
+                  className={`card py-3 px-4 border transition-all ${m.status === 'prime' ? 'border-green-300 bg-green-50/30' : m.status === 'working' ? 'border-green-100' : 'border-gray-100 opacity-70'}`}>
+                  <div className="flex items-start justify-between mb-1">
+                    <span className="text-xl">{m.flag}</span>
+                    <span className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${st.badge}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                      {st.label}
+                    </span>
+                  </div>
+                  <p className="font-semibold text-gray-800 text-sm">{m.city}</p>
+                  <p className="text-[10px] text-gray-400 mb-2">{m.country}</p>
+                  <p className="text-2xl font-bold text-gray-900 tabular-nums tracking-tight">{m.timeStr}</p>
+                  {/* Offset from Jakarta */}
+                  {(() => {
+                    const diff = m.hour - jakartaHour + (m.minute - homeMarket.minute) / 60
+                    const roundedDiff = Math.round(diff * 2) / 2
+                    if (roundedDiff === 0) return <p className="text-[10px] text-gray-400 mt-0.5">= Sama dengan Jakarta</p>
+                    return (
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {roundedDiff > 0 ? `+${roundedDiff}` : roundedDiff}j dari Jakarta
+                      </p>
+                    )
+                  })()}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Best strategy tips */}
+      <div className="card bg-blue-50/40 border-blue-100">
+        <p className="text-xs font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Lightbulb size={13} />Tips Timing Apply Loker Luar Negeri</p>
+        <ul className="space-y-1.5 text-xs text-blue-900">
+          <li className="flex items-start gap-2"><span className="text-green-500 shrink-0">●</span>Apply saat jam <strong>10:00–15:00 waktu setempat</strong> (prime time) — recruiter aktif, CV lebih mungkin terbaca hari itu</li>
+          <li className="flex items-start gap-2"><span className="text-amber-500 shrink-0">●</span><strong>Senin pagi</strong> di kota target = timing terbaik mingguan — inbox kerja baru dibuka</li>
+          <li className="flex items-start gap-2"><span className="text-red-400 shrink-0">●</span>Hindari <strong>Jumat sore</strong> (lokal) — CV sering "pending" sampai minggu depan</li>
+          <li className="flex items-start gap-2"><span className="text-blue-500 shrink-0">●</span>Untuk <strong>SG/KL</strong>: WIB sudah +0/+0 jadi apply pagi hari Jakarta = pas jam kerja sana</li>
+          <li className="flex items-start gap-2"><span className="text-blue-500 shrink-0">●</span>Untuk <strong>UK/EU</strong>: Jam 15:00–21:00 WIB = jam kerja London/Amsterdam</li>
+          <li className="flex items-start gap-2"><span className="text-blue-500 shrink-0">●</span>Untuk <strong>USA</strong>: Jam 20:00–00:00 WIB = prime time East Coast, dini hari WIB = West Coast</li>
+        </ul>
+      </div>
     </div>
   )
 }
