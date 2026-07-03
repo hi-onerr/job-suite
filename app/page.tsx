@@ -1793,7 +1793,8 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                 <ul className="space-y-1.5">
                   {improve.suggestions.map((s, i) => (
                     <li key={i} className="text-xs text-gray-700 flex items-start gap-2">
-                      <Lightbulb size={12} className="text-amber-500 mt-0.5 flex-shrink-0" /> {s}
+                      <Lightbulb size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                      <span dangerouslySetInnerHTML={{ __html: s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>') }} />
                     </li>
                   ))}
                 </ul>
@@ -1814,7 +1815,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                     <p className="text-xs font-medium text-gray-500">Ringkasan yang ditulis ulang</p>
                     <button onClick={() => { navigator.clipboard.writeText(improve.rewrittenSummary!); showSuccess('Ringkasan disalin.', 'Tersalin') }} className="text-xs text-primary hover:underline">Copy</button>
                   </div>
-                  <p className="text-xs text-gray-700 leading-relaxed bg-white rounded-lg p-2.5 border border-gray-100">{improve.rewrittenSummary}</p>
+                  <p className="text-xs text-gray-700 leading-relaxed bg-white rounded-lg p-2.5 border border-gray-100" dangerouslySetInnerHTML={{ __html: improve.rewrittenSummary!.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>') }} />
                 </div>
               )}
             </div>
