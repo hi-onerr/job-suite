@@ -30,7 +30,6 @@
     "prisma": "^6.19.3",
     "react": "^18",
     "react-dom": "^18",
-    "react-simple-maps": "^3.0.0",
     "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
