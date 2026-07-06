@@ -17,7 +17,7 @@ Output the CV in EXACTLY this structure and markers so it can be rendered into a
 
 NAME: <candidate full name>
 HEADLINE: <2-3 short role descriptors separated by " | ">
-CONTACT: <City, Country> · <email> · <linkedin> [· <extra such as "Open to relocation: ...">]
+CONTACT: <City, Country> · <phone if available> · <email> · <linkedin>
 
 ## PROFESSIONAL SUMMARY
 <one keyword-rich paragraph, 3-4 sentences, tailored to the role>
@@ -78,7 +78,7 @@ TODAY'S DATE: ${today}
 Output the cover letter in EXACTLY this structure and markers so it can be rendered into a formatted letter. Output ONLY the letter — no commentary before or after.
 
 NAME: <candidate full name>
-CONTACT: <City, Country> · <email> · <linkedin>
+CONTACT: <City, Country> · <phone if available> · <email> · <linkedin>
 DATE: <candidate city>, ${today}
 RECIPIENT:
 <Recipient name, or "Hiring Manager" if unknown>

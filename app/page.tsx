@@ -174,71 +174,150 @@ export default function HomePage() {
 
 function SignInScreen() {
   const FEATURES = [
-    { icon: <Target size={16} />, title: 'Match scoring', desc: 'Skor kecocokan CV vs lowongan' },
-    { icon: <Sparkles size={16} />, title: 'AI documents', desc: 'CV, cover letter & email otomatis' },
-    { icon: <Brain size={16} />, title: 'Interview prep', desc: 'Riset perusahaan & latihan tanya-jawab' },
-    { icon: <TrendingUp size={16} />, title: 'Tracking', desc: 'Pantau status tiap lamaran' },
+    { icon: <Target size={15} />, title: 'ATS Match Score', desc: 'Tahu peluang lolosmu sebelum apply' },
+    { icon: <Sparkles size={15} />, title: 'CV & Cover Letter AI', desc: 'Dokumen profesional dalam hitungan detik' },
+    { icon: <Brain size={15} />, title: 'Interview Prep', desc: '10 pertanyaan + jawaban dari data nyata' },
+    { icon: <TrendingUp size={15} />, title: 'Job Tracker', desc: 'Pantau semua lamaran di satu tempat' },
   ]
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-2">
-      {/* Left — brand / hero */}
-      <div className="relative hidden lg:flex flex-col justify-between bg-brand-gradient p-12 text-white overflow-hidden">
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/10 blur-2xl" />
-        <div className="absolute bottom-0 -left-20 w-80 h-80 rounded-full bg-accent/20 blur-2xl" />
+    <div className="min-h-screen lg:grid lg:grid-cols-[1fr_480px]">
+      {/* ── Left: hero ── */}
+      <div className="relative hidden lg:flex flex-col justify-between p-14 text-white overflow-hidden"
+        style={{ background: 'linear-gradient(135deg,#0f2d6b 0%,#1a4fa8 45%,#0e7490 100%)' }}>
+
+        {/* Decorative blobs */}
+        <div className="absolute -top-32 -right-32 w-[28rem] h-[28rem] rounded-full opacity-20 blur-3xl"
+          style={{ background: 'radial-gradient(circle,#60a5fa,transparent)' }} />
+        <div className="absolute bottom-10 -left-24 w-72 h-72 rounded-full opacity-15 blur-3xl"
+          style={{ background: 'radial-gradient(circle,#818cf8,transparent)' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full opacity-[0.07] blur-2xl"
+          style={{ background: 'radial-gradient(circle,#ffffff,transparent)' }} />
+
+        {/* Logo */}
         <div className="relative flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/15 backdrop-blur rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-white/15 backdrop-blur-sm rounded-xl flex items-center justify-center ring-1 ring-white/20">
             <Briefcase size={20} />
           </div>
-          <span className="font-semibold text-lg">Job Application Suite</span>
+          <span className="font-bold text-lg tracking-tight">Job Application Suite</span>
         </div>
-        <div className="relative space-y-6">
-          <h2 className="text-3xl font-bold leading-snug">
-            Lamar kerja lebih cerdas,<br />bukan lebih capek.
-          </h2>
-          <p className="text-white/80 max-w-md">
-            Asisten lamaran kerja bertenaga AI — analisis kecocokan, generate dokumen, dan siapkan interview, semua di satu tempat.
-          </p>
-          <div className="grid grid-cols-2 gap-3 max-w-md pt-2">
+
+        {/* Hero copy */}
+        <div className="relative space-y-7">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1 text-xs font-medium text-white/90 ring-1 ring-white/20">
+              <svg viewBox="0 0 16 16" className="w-3 h-3 shrink-0" fill="none">
+                <defs><linearGradient id="hs" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#93c5fd"/><stop offset="100%" stopColor="#e879f9"/>
+                </linearGradient></defs>
+                <path d="M8 1C8 4.87 5.04 8 1 8c4.04 1 7 4.13 7 7 0-2.87 2.96-6 7-7C11 7 8 3.87 8 1z" fill="url(#hs)"/>
+              </svg>
+              Didukung Google Gemini AI
+            </div>
+            <h2 className="text-4xl font-extrabold leading-tight tracking-tight">
+              Lamar kerja<br />lebih cerdas,<br /><span className="text-sky-300">bukan lebih capek.</span>
+            </h2>
+            <p className="text-white/70 text-sm leading-relaxed max-w-sm">
+              Analisis kecocokan CV, buat dokumen profesional, dan latihan interview — semua dibantu AI, semua di satu tempat.
+            </p>
+          </div>
+
+          {/* Feature list */}
+          <div className="space-y-3">
             {FEATURES.map(f => (
-              <div key={f.title} className="bg-white/10 backdrop-blur rounded-xl p-3.5 border border-white/10">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-accent bg-white/15 rounded-lg p-1.5">{f.icon}</span>
-                  <span className="font-semibold text-sm">{f.title}</span>
+              <div key={f.title} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/10 ring-1 ring-white/15 flex items-center justify-center shrink-0 text-sky-300">
+                  {f.icon}
                 </div>
-                <p className="text-xs text-white/70">{f.desc}</p>
+                <div>
+                  <p className="text-sm font-semibold leading-none mb-0.5">{f.title}</p>
+                  <p className="text-xs text-white/60">{f.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Social proof */}
+          <div className="flex items-center gap-5 pt-2">
+            {([
+              { icon: <Sparkles size={16} />, label: 'CV digenerate' },
+              { icon: <Briefcase size={16} />, label: 'Lamaran dilacak' },
+              { icon: <Brain size={16} />, label: 'Interview dipersiapkan' },
+            ] as { icon: React.ReactNode; label: string }[]).map(({ icon, label }) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className="text-sky-300 opacity-80">{icon}</span>
+                <p className="text-[11px] text-white/60">{label}</p>
               </div>
             ))}
           </div>
         </div>
-        <p className="relative text-xs text-white/50">© {new Date().getFullYear()} Job Application Suite</p>
+
+        <p className="relative text-xs text-white/40">© {new Date().getFullYear()} Job Application Suite</p>
       </div>
 
-      {/* Right — sign in */}
-      <div className="flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm space-y-6 animate-fade-in">
-          <div className="lg:hidden w-12 h-12 bg-brand-gradient rounded-2xl flex items-center justify-center">
-            <Briefcase size={22} className="text-white" />
+      {/* ── Right: sign in card ── */}
+      <div className="flex items-center justify-center px-6 py-12 bg-gray-50">
+        <div className="w-full max-w-[360px] animate-fade-in">
+
+          {/* Mobile logo */}
+          <div className="lg:hidden flex items-center gap-2 mb-8">
+            <div className="w-9 h-9 bg-brand-gradient rounded-xl flex items-center justify-center">
+              <Briefcase size={18} className="text-white" />
+            </div>
+            <span className="font-bold text-gray-900">Job Suite</span>
           </div>
-          <div>
-            <h1 className="font-bold text-gray-900 text-2xl">Selamat datang 👋</h1>
-            <p className="text-sm text-gray-500 mt-1.5">Masuk untuk mulai melamar kerja dengan bantuan AI.</p>
-          </div>
-          <button
-            onClick={() => signIn('google')}
-            className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white rounded-xl px-4 py-3
-                       font-medium text-gray-700 shadow-sm transition-all hover:shadow-md hover:border-gray-300 active:scale-[.99]"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-              <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
-              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
-              <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
-              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
-            </svg>
-            Lanjutkan dengan Google
-          </button>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <CheckCircle size={13} className="text-accent" />
-            CV dan data kamu privat — hanya untuk akunmu.
+
+          {/* Card */}
+          <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/60 border border-gray-100 p-8 space-y-6">
+            <div className="space-y-1">
+              <h1 className="font-extrabold text-gray-900 text-2xl tracking-tight">Selamat datang 👋</h1>
+              <p className="text-sm text-gray-500">Masuk untuk mulai melamar kerja dengan bantuan AI.</p>
+            </div>
+
+            {/* Google button */}
+            <button
+              onClick={() => signIn('google')}
+              className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3.5
+                         font-medium text-gray-700 shadow-sm transition-all hover:shadow-md hover:bg-gray-50 hover:border-gray-300 active:scale-[.98]"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
+                <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
+                <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
+              </svg>
+              Lanjutkan dengan Google
+            </button>
+
+            {/* Trust */}
+            <div className="space-y-2">
+              {[
+                [<CheckCircle key="1" size={13} className="text-emerald-500 shrink-0" />, 'CV dan data kamu privat — hanya untuk akunmu'],
+                [<CheckCircle key="2" size={13} className="text-emerald-500 shrink-0" />, 'Gratis digunakan, tanpa kartu kredit'],
+              ].map(([icon, text], i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-gray-400">{icon}{text}</div>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-gray-100" />
+
+            {/* Gemini badge */}
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-transparent"
+                style={{ background: 'linear-gradient(#f8fafc,#f8fafc) padding-box, linear-gradient(135deg,#4285F4,#9B72CB,#D96570) border-box' }}>
+                <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" fill="none">
+                  <defs><linearGradient id="gem2" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#4285F4"/><stop offset="50%" stopColor="#9B72CB"/><stop offset="100%" stopColor="#D96570"/>
+                  </linearGradient></defs>
+                  <path d="M8 1C8 4.87 5.04 8 1 8c4.04 1 7 4.13 7 7 0-2.87 2.96-6 7-7C11 7 8 3.87 8 1z" fill="url(#gem2)"/>
+                </svg>
+                <span className="text-xs font-semibold"
+                  style={{ background: 'linear-gradient(135deg,#4285F4,#9B72CB,#D96570)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                  Google Gemini
+                </span>
+              </div>
+              <span className="text-xs text-gray-400">AI engine</span>
+            </div>
           </div>
         </div>
       </div>
@@ -967,6 +1046,7 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
     { label: 'Applied', value: count('applied'), Icon: Send, tone: 'text-blue-600 bg-blue-50' },
     { label: 'Interview', value: count('interview'), Icon: Star, tone: 'text-amber-600 bg-amber-50' },
     { label: 'Offer', value: count('offer'), Icon: Award, tone: 'text-green-600 bg-green-50' },
+    { label: 'Rejected', value: count('rejected'), Icon: XCircle, tone: 'text-red-600 bg-red-50' },
     { label: 'Rata-rata Match', value: `${avgMatch}%`, Icon: Target, tone: 'text-accent bg-teal-50' },
   ]
 
@@ -981,7 +1061,7 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
       onSearch={onGoToSearch}
     />
     {/* Stat cards */}
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
       {STATS.map(({ label, value, Icon, tone }) => (
         <div key={label} className="card card-hover p-4">
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${tone}`}><Icon size={18} /></div>
@@ -1391,6 +1471,16 @@ function JobDetail({ job, onUpdate, onDelete, profile }: {
             value={job.role || ''}
             onChange={e => onUpdate(job.id, { role: e.target.value })}
             placeholder="e.g. IT Project Manager"
+            className="input text-sm"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs font-medium text-gray-500 block mb-1">Location</label>
+          <input
+            type="text"
+            value={job.location || ''}
+            onChange={e => onUpdate(job.id, { location: e.target.value })}
+            placeholder="e.g. Jakarta, Indonesia"
             className="input text-sm"
           />
         </div>
@@ -3804,6 +3894,11 @@ function PrepTab({ jobs, profile, configuredKeys, onUpdateJob, onGoToProfile, on
   const [selectedJobId, setSelectedJobId] = useState('')
   const [loading, setLoading] = useState(false)
   const [prepData, setPrepData] = useState<PrepResult | null>(null)
+  const [jobPage, setJobPage] = useState(0)
+
+  const PAGE_SIZE = 10
+  const totalPages = Math.ceil(jobs.length / PAGE_SIZE)
+  const pagedJobs = jobs.slice(jobPage * PAGE_SIZE, (jobPage + 1) * PAGE_SIZE)
 
   const selectedJob = jobs.find(j => j.id === selectedJobId)
 
@@ -3858,17 +3953,40 @@ function PrepTab({ jobs, profile, configuredKeys, onUpdateJob, onGoToProfile, on
       <div className="flex gap-4" style={{ minHeight: '72vh' }}>
         {/* ── Left: job picker ── */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
-            Loker kamu · {jobs.length}
-          </p>
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Loker kamu · {jobs.length}
+            </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setJobPage(p => Math.max(0, p - 1))}
+                  disabled={jobPage === 0}
+                  className="p-1 rounded-lg border border-gray-200 text-gray-500 hover:border-primary hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                <span className="text-[11px] text-gray-400 tabular-nums">
+                  {jobPage * PAGE_SIZE + 1}–{Math.min((jobPage + 1) * PAGE_SIZE, jobs.length)}
+                </span>
+                <button
+                  onClick={() => setJobPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={jobPage >= totalPages - 1}
+                  className="p-1 rounded-lg border border-gray-200 text-gray-500 hover:border-primary hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            )}
+          </div>
           {jobs.length === 0 ? (
             <div className="card flex flex-col items-center justify-center py-10 text-center flex-1">
               <Briefcase size={28} className="text-gray-200 mb-2" />
               <p className="text-xs text-gray-400">Belum ada loker.<br />Tambah dulu di Job Tracker.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 overflow-y-auto flex-1 pr-1">
-              {jobs.map(j => {
+            <div className="flex flex-col gap-2 flex-1 pr-1">
+              {pagedJobs.map(j => {
                 const cfg = STATUS_CONFIG[j.status as keyof typeof STATUS_CONFIG]
                 const active = selectedJobId === j.id
                 return (
@@ -4179,6 +4297,7 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
   const [parsing, setParsing] = useState(false)
   const [aiParsing, setAiParsing] = useState(false)
   const [mode, setMode] = useState<'view' | 'edit'>(profile ? 'view' : 'edit')
+  const [phoneInput, setPhoneInput] = useState('')
   const triedRef = useRef(false)
 
   // Ask Gemini to structure the CV. With no arg it parses the stored profile.
@@ -4235,17 +4354,25 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
   }
 
   const handleSave = () => {
-    onSave(text)
+    let saveText = text
+    if (phoneInput.trim() && !text.match(/(?:\+?\d[\d\s().-]{8,}\d)/)) {
+      saveText = `Phone: ${phoneInput.trim()}\n${text}`
+      setText(saveText)
+    }
+    onSave(saveText)
     setSaved(true)
     setMode('view')
     triedRef.current = true
-    if (hasGeminiKey) parseWithAI(text)   // re-structure the edited CV
+    if (hasGeminiKey) parseWithAI(saveText)
     setTimeout(() => setSaved(false), 2000)
   }
 
   const cv = useMemo(() => parseCv(text), [text])
   const ins = useMemo(() => analyzeProfile(text), [text])
-  const dirty = text !== profile
+  const dirty = text !== profile || phoneInput.trim() !== (cv.phone || '').trim()
+
+  // Pre-fill phone from parsed CV when it's found (but don't overwrite user edits)
+  useEffect(() => { if (!phoneInput && cv.phone) setPhoneInput(cv.phone) }, [cv.phone])
 
   // Prefer AI-structured data; fall back to the heuristic parse.
   const s = structured || {}
@@ -4523,6 +4650,20 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
                 </div>
                 <input type="file" accept=".pdf,.txt" onChange={handleFile} className="hidden" disabled={parsing} />
               </label>
+
+              {/* Phone quick-input */}
+              <div className="mb-4">
+                <label className="text-xs font-medium text-gray-500 block mb-1 flex items-center gap-1.5">
+                  <Phone size={12} /> Nomor HP
+                </label>
+                <input
+                  value={phoneInput}
+                  onChange={e => setPhoneInput(e.target.value)}
+                  placeholder="e.g. +62 812 3456 7890"
+                  className="input text-sm"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Dideteksi dari teks CV — isi manual jika tidak terdeteksi otomatis</p>
+              </div>
 
               {/* Text area */}
               <div>

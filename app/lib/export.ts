@@ -211,9 +211,9 @@ function rule(lineWidth: number, color: string, bottom: number): any {
 
 function cvPdfContent(cv: CvDoc): any[] {
   const c: any[] = []
-  if (cv.name) c.push({ text: cv.name, alignment: 'center', bold: true, fontSize: 21, margin: [0, 0, 0, 2] })
-  if (cv.headline) c.push({ text: cv.headline, alignment: 'center', color: '#444', fontSize: 10, margin: [0, 0, 0, 1] })
-  if (cv.contact) c.push({ text: cv.contact, alignment: 'center', color: GRAY, fontSize: 8.5, margin: [0, 0, 0, 8] })
+  if (cv.name) c.push({ text: cv.name, bold: true, fontSize: 21, margin: [0, 0, 0, 2] })
+  if (cv.headline) c.push({ text: cv.headline, color: '#444', fontSize: 10, margin: [0, 0, 0, 1] })
+  if (cv.contact) c.push({ text: cv.contact, color: GRAY, fontSize: 8.5, margin: [0, 0, 0, 8] })
 
   for (const sec of cv.sections) {
     c.push({ text: sec.title.toUpperCase(), color: BLUE, bold: true, fontSize: 10.5, margin: [0, 8, 0, 2] })
@@ -377,9 +377,9 @@ function skillsTable(skills: { cat: string; desc: string }[]): Table {
 
 function cvChildren(cv: CvDoc): (Paragraph | Table)[] {
   const ch: (Paragraph | Table)[] = []
-  if (cv.name) ch.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 20 }, children: [new TextRun({ text: cv.name, bold: true, size: 44 })] }))
-  if (cv.headline) ch.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 20 }, children: [new TextRun({ text: cv.headline, size: 20, color: '444444' })] }))
-  if (cv.contact) ch.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: cv.contact, size: 17, color: '555555' })] }))
+  if (cv.name) ch.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: cv.name, bold: true, size: 44 })] }))
+  if (cv.headline) ch.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: cv.headline, size: 20, color: '444444' })] }))
+  if (cv.contact) ch.push(new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: cv.contact, size: 17, color: '555555' })] }))
 
   for (const sec of cv.sections) {
     ch.push(sectionHeading(sec.title))
