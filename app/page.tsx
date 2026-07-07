@@ -1888,15 +1888,18 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   // Clicking a type shows its saved draft if present, otherwise generates.
   const select = (type: DocType) => {
     setAtsScore(null)
-    // Switching doc type or loading a saved draft invalidates any stored prev version
-    // (prevAtsScore was for the previous render's CV content, which no longer applies)
     if (type !== 'cv' || activeGen !== 'cv') {
       setPrevContent(null)
       setPrevAtsScore(null)
     }
     const existing = savedFor(type)
-    if (existing) { setActiveGen(type); setGeneratedContent(existing) }
-    else generate(type)
+    if (existing) {
+      setActiveGen(type)
+      setGeneratedContent(existing)
+      if (type === 'cv') rescore(existing)
+    } else {
+      generate(type)
+    }
   }
 
   return (
