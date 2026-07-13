@@ -2041,9 +2041,15 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <p className="text-xs font-medium text-gray-500">{DOC_TYPES.find(d => d.type === activeGen)?.label} Content</p>
             <div className="flex items-center gap-2">
-              {/* Regenerate */}
+              {/* Regenerate — cv/coverletter/linkedin open modal to confirm settings */}
               <button
-                onClick={() => generate(activeGen)}
+                onClick={() => {
+                  if (activeGen === 'cv' || activeGen === 'coverletter' || activeGen === 'linkedin') {
+                    setPendingGenType(activeGen)
+                  } else {
+                    generate(activeGen)
+                  }
+                }}
                 className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-primary border border-gray-200 hover:border-primary/40 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all"
               >
                 <RefreshCw size={12} /> Regenerate
@@ -2140,7 +2146,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                     </p>
                     <div className="flex flex-col gap-1.5 shrink-0">
                       <button
-                        onClick={() => generate(activeGen!)}
+                        onClick={() => setPendingGenType(activeGen)}
                         className="text-xs font-medium bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 rounded-lg px-2.5 py-1.5 transition-colors flex items-center gap-1.5 whitespace-nowrap">
                         <RefreshCw size={11} /> Regenerate lagi
                       </button>
