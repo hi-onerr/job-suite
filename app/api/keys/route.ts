@@ -19,6 +19,8 @@ export async function GET() {
 
 // PUT /api/keys — upsert keys from { provider: keyString }. An empty/blank
 // value deletes the stored key for that provider. Keys are encrypted at rest.
+// Uses findFirst + create/update/delete to avoid Prisma implicit transactions
+// (not supported by the Neon HTTP adapter).
 export async function PUT(req: NextRequest) {
   const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -27,16 +29,20 @@ export async function PUT(req: NextRequest) {
 
   for (const [provider, value] of Object.entries(body)) {
     const trimmed = (value ?? '').trim()
+    const existing = await prisma.apiKey.findFirst({
+      where: { userId, provider },
+      select: { id: true },
+    })
     if (!trimmed) {
-      await prisma.apiKey.deleteMany({ where: { userId, provider } })
+      if (existing) await prisma.apiKey.delete({ where: { id: existing.id } })
       continue
     }
     const { ciphertext, iv, authTag } = encrypt(trimmed)
-    await prisma.apiKey.upsert({
-      where: { userId_provider: { userId, provider } },
-      create: { userId, provider, ciphertext, iv, authTag },
-      update: { ciphertext, iv, authTag },
-    })
+    if (existing) {
+      await prisma.apiKey.update({ where: { id: existing.id }, data: { ciphertext, iv, authTag } })
+    } else {
+      await prisma.apiKey.create({ data: { userId, provider, ciphertext, iv, authTag } })
+    }
   }
   return NextResponse.json({ ok: true })
 }

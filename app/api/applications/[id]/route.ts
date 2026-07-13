@@ -23,23 +23,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ('documents' in body) data.documents = body.documents ? JSON.stringify(body.documents) : null
   if ('prep' in body) data.prep = body.prep ? JSON.stringify(body.prep) : null
 
-  // updateMany scoped by userId ensures a user can only touch their own rows.
-  const result = await prisma.application.updateMany({
-    where: { id: params.id, userId },
-    data,
-  })
-  if (result.count === 0) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    // Verify ownership without updateMany (HTTP mode doesn't support transactions).
+    const existing = await prisma.application.findFirst({
+      where: { id: params.id, userId },
+      select: { id: true },
+    })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const updated = await prisma.application.update({
+      where: { id: params.id },
+      data,
+    })
+    let analysis = null
+    if (updated.analysis) { try { analysis = JSON.parse(updated.analysis) } catch { /* ignore */ } }
+    let documents = null
+    if (updated.documents) { try { documents = JSON.parse(updated.documents) } catch { /* ignore */ } }
+    let prep = null
+    if (updated.prep) { try { prep = JSON.parse(updated.prep) } catch { /* ignore */ } }
+    return NextResponse.json({ ...updated, analysis, documents, prep })
+  } catch (e: any) {
+    console.error('[PATCH /applications/:id] DB error:', e?.message ?? e)
+    return NextResponse.json({ error: e?.message ?? 'Internal server error' }, { status: 500 })
   }
-  const updated = await prisma.application.findUnique({ where: { id: params.id } })
-  if (!updated) return NextResponse.json(updated)
-  let analysis = null
-  if (updated.analysis) { try { analysis = JSON.parse(updated.analysis) } catch { /* ignore */ } }
-  let documents = null
-  if (updated.documents) { try { documents = JSON.parse(updated.documents) } catch { /* ignore */ } }
-  let prep = null
-  if (updated.prep) { try { prep = JSON.parse(updated.prep) } catch { /* ignore */ } }
-  return NextResponse.json({ ...updated, analysis, documents, prep })
 }
 
 // DELETE /api/applications/:id — delete one of the user's applications.
@@ -47,11 +53,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const result = await prisma.application.deleteMany({
+  // Verify ownership first (HTTP mode doesn't support transactions / deleteMany).
+  const existing = await prisma.application.findFirst({
     where: { id: params.id, userId },
+    select: { id: true },
   })
-  if (result.count === 0) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  await prisma.application.delete({ where: { id: params.id } })
   return NextResponse.json({ ok: true })
 }

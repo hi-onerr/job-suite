@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['pdf-parse'],
+    serverComponentsExternalPackages: ['pdf-parse', '@neondatabase/serverless', '@prisma/adapter-neon'],
   },
   async headers() {
     return [

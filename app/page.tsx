@@ -104,7 +104,7 @@ interface PrepResult {
   _detectedCity?: string | null
 }
 
-type DocType = 'cv' | 'coverletter' | 'email' | 'followup' | 'thankyou'
+type DocType = 'cv' | 'coverletter' | 'email' | 'followup' | 'thankyou' | 'linkedin'
 
 interface AppDocument {
   type: DocType
@@ -348,6 +348,7 @@ function AppShell() {
   const [profile, setProfile] = useState<string>('')
   const [profileStructured, setProfileStructured] = useState<any>(null)
   const [configuredKeys, setConfiguredKeys] = useState<ConfiguredKeys>({})
+  const [keysLoaded, setKeysLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dark, setDark] = useState(false)
   const [showAccountPicker, setShowAccountPicker] = useState(false)
@@ -390,6 +391,7 @@ function AppShell() {
     if (res.ok) {
       const data = await res.json()
       setConfiguredKeys(data.configured || {})
+      setKeysLoaded(true)
     }
   }, [])
 
@@ -411,6 +413,7 @@ function AppShell() {
           setProfileStructured(p.structured || null)
         }
         if (keysRes.ok) setConfiguredKeys((await keysRes.json()).configured || {})
+        setKeysLoaded(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -439,14 +442,29 @@ function AppShell() {
   const pendingUpdates = useRef<Map<string, Partial<JobApplication>>>(new Map())
   const flushTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
-  const flushJob = useCallback((id: string) => {
+  const flushJob = useCallback(async (id: string) => {
     const updates = pendingUpdates.current.get(id)
     pendingUpdates.current.delete(id)
     const timer = flushTimers.current.get(id)
     if (timer) { clearTimeout(timer); flushTimers.current.delete(id) }
     if (!updates || Object.keys(updates).length === 0) return
-    fetch(`/api/applications/${id}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(updates) })
-  }, [])
+    try {
+      const res = await fetch(`/api/applications/${id}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(updates) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('[flushJob] PATCH failed', res.status, err)
+        showError(`Gagal menyimpan (${res.status}): ${err.error || 'Coba lagi atau refresh halaman'}`)
+        // Reload from server to restore authoritative state
+        const fresh = await fetch('/api/applications').catch(() => null)
+        if (fresh?.ok) setJobs(await fresh.json())
+      }
+    } catch (e) {
+      console.error('[flushJob] network error', e)
+      showError('Gagal menyimpan — periksa koneksi internet lalu refresh.')
+      const fresh = await fetch('/api/applications').catch(() => null)
+      if (fresh?.ok) setJobs(await fresh.json())
+    }
+  }, [setJobs])
 
   const updateJob = useCallback((id: string, updates: Partial<JobApplication>) => {
     // Optimistic local update for a responsive UI...
@@ -632,13 +650,13 @@ function AppShell() {
                 />
               )}
               {activeTab === 'search' && (
-                <CariLokerTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} onJobAdded={addJob} onGoToSettings={() => setActiveTab('settings')} onGoToProfile={() => setActiveTab('profile')} onGoToTracker={() => setActiveTab('tracker')} />
+                <CariLokerTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onJobAdded={addJob} onGoToSettings={() => setActiveTab('settings')} onGoToProfile={() => setActiveTab('profile')} onGoToTracker={() => setActiveTab('tracker')} />
               )}
               {activeTab === 'analyze' && (
-                <AnalyzeTab onJobAdded={addJob} onUpdateJob={updateJob} profile={profile} configuredKeys={configuredKeys} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
+                <AnalyzeTab onJobAdded={addJob} onUpdateJob={updateJob} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
               )}
               {activeTab === 'prep' && (
-                <PrepTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} onUpdateJob={updateJob} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
+                <PrepTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onUpdateJob={updateJob} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
               )}
               {activeTab === 'profile' && (
                 <ProfileTab
@@ -1724,6 +1742,7 @@ const DOC_TYPES: { type: DocType; label: string; icon: React.ReactNode }[] = [
   { type: 'email', label: 'Email', icon: <Mail size={16} /> },
   { type: 'followup', label: 'Follow-up', icon: <Send size={16} /> },
   { type: 'thankyou', label: 'Thank You', icon: <BadgeCheck size={16} /> },
+  { type: 'linkedin', label: 'LinkedIn', icon: <Linkedin size={16} /> },
 ]
 
 function DocumentGenerator({ jobDesc, company, role, location, profile, savedDocs, onSaveDocs, analysis, baseScore }: {
@@ -1740,6 +1759,8 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [activeGen, setActiveGen] = useState<DocType | null>(null)
   const [generatedContent, setGeneratedContent] = useState('')
   const [genLoading, setGenLoading] = useState(false)
+  const [pageCount, setPageCount] = useState(1)
+  const [userRequest, setUserRequest] = useState('')
   const [atsScore, setAtsScore] = useState<number | null>(null)
   const [scoring, setScoring] = useState(false)
   const [improve, setImprove] = useState<CvImprovement | null>(null)
@@ -1755,6 +1776,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   // PDF preview modal
   const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; blob: Blob } | null>(null)
   const [pdfGenerating, setPdfGenerating] = useState(false)
+  const [pendingGenType, setPendingGenType] = useState<DocType | null>(null)
 
   const runImprove = async () => {
     if (!jobDesc || !profile) return
@@ -1830,7 +1852,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   }
 
   const DOC_LABEL: Record<DocType, string> = {
-    cv: 'CV', coverletter: 'Cover Letter', email: 'Email', followup: 'Follow-up', thankyou: 'Thank You',
+    cv: 'CV', coverletter: 'Cover Letter', email: 'Email', followup: 'Follow-up', thankyou: 'Thank You', linkedin: 'LinkedIn Message',
   }
 
   const revertToPrev = () => {
@@ -1868,7 +1890,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: JSON_HEADERS,
-        body: JSON.stringify({ type, jobDesc, company, role, location, profile, analysis }),
+        body: JSON.stringify({ type, jobDesc, company, role, location, profile, analysis, pages: pageCount, userRequest: userRequest.trim() }),
         signal: ctrl.signal,
       })
       const data = await res.json()
@@ -1910,11 +1932,18 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
           <AlertCircle size={12} /> Upload CV/profile dulu agar dokumen sesuai pengalamanmu.
         </p>
       )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
         {DOC_TYPES.map(({ type, label, icon }) => (
           <button
             key={type}
-            onClick={() => select(type)}
+            onClick={() => {
+              if (type === 'cv' || type === 'coverletter' || type === 'linkedin') {
+                setPendingGenType(type)
+              } else {
+                select(type)
+              }
+            }}
             disabled={genLoading || !jobDesc}
             className={`relative flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium border transition-all ${
               activeGen === type ? 'bg-primary text-white border-primary' : 'border-gray-200 text-gray-700 hover:border-primary hover:text-primary'
@@ -2026,30 +2055,31 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
               >
                 <ClipboardCopy size={12} /> Copy
               </button>
-              {/* PDF — preview modal before download */}
-              <button
-                disabled={pdfGenerating}
-                onClick={async () => {
-                  setPdfGenerating(true)
-                  try {
-                    const fileName = exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile))
-                    const blob = await getPdfBlob(generatedContent, activeGen!)
-                    const url = URL.createObjectURL(blob)
-                    setPdfPreview({ url, fileName: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`, blob })
-                  } catch { showError('Gagal membuat preview PDF.') }
-                  finally { setPdfGenerating(false) }
-                }}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {pdfGenerating ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Generating...</> : <><Download size={12} /> PDF</>}
-              </button>
-              {/* DOCX — blue gradient pill */}
-              <button
-                onClick={() => exportDocx(generatedContent, exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile)), activeGen!)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all"
-              >
-                <FileText size={12} /> DOCX
-              </button>
+              {/* PDF & DOCX — hidden for linkedin (copy is enough) */}
+              {activeGen !== 'linkedin' && <>
+                <button
+                  disabled={pdfGenerating}
+                  onClick={async () => {
+                    setPdfGenerating(true)
+                    try {
+                      const fileName = exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile))
+                      const blob = await getPdfBlob(generatedContent, activeGen!)
+                      const url = URL.createObjectURL(blob)
+                      setPdfPreview({ url, fileName: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`, blob })
+                    } catch { showError('Gagal membuat preview PDF.') }
+                    finally { setPdfGenerating(false) }
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {pdfGenerating ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Generating...</> : <><Download size={12} /> PDF</>}
+                </button>
+                <button
+                  onClick={() => exportDocx(generatedContent, exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile)), activeGen!)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all"
+                >
+                  <FileText size={12} /> DOCX
+                </button>
+              </>}
             </div>
           </div>
           {activeGen === 'cv' && (scoring || atsScore !== null) && (() => {
@@ -2145,6 +2175,89 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
         </div>
       )}
 
+      {/* Generate Settings Modal — CV, Cover Letter, LinkedIn */}
+      {pendingGenType && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setPendingGenType(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold text-gray-900 text-base">
+                {pendingGenType === 'cv' ? 'Generate CV' : pendingGenType === 'coverletter' ? 'Generate Cover Letter' : 'LinkedIn Reach Out'}
+              </h3>
+              <button onClick={() => setPendingGenType(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* CV / Cover Letter settings */}
+            {(pendingGenType === 'cv' || pendingGenType === 'coverletter') && <>
+              <div className="mb-4">
+                <p className="text-xs font-medium text-gray-500 mb-2">Jumlah Halaman</p>
+                <div className="inline-flex bg-gray-100 rounded-xl p-1 gap-1">
+                  {[1, 2, 3].map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setPageCount(p)}
+                      className={`w-12 py-2 rounded-lg text-sm font-semibold transition-all ${pageCount === p ? 'bg-white shadow text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-5">
+                <p className="text-xs font-medium text-gray-500 mb-1.5">Instruksi Tambahan <span className="text-gray-400 font-normal">(opsional)</span></p>
+                <textarea
+                  value={userRequest}
+                  onChange={e => setUserRequest(e.target.value.slice(0, 500))}
+                  placeholder={`Contoh: "Gunakan Bahasa Indonesia", "Fokus ke pengalaman fintech", "Buat lebih formal"...`}
+                  rows={3}
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-gray-400"
+                />
+                <p className="text-xs text-gray-400 text-right mt-1">{userRequest.length}/500</p>
+              </div>
+            </>}
+
+            {/* LinkedIn settings */}
+            {pendingGenType === 'linkedin' && (
+              <div className="mb-5">
+                <p className="text-xs font-medium text-gray-500 mb-1.5">Info Recruiter <span className="text-gray-400 font-normal">(opsional — sangat disarankan)</span></p>
+                <textarea
+                  value={userRequest}
+                  onChange={e => setUserRequest(e.target.value.slice(0, 500))}
+                  placeholder={`Contoh: "Nama: Ardyayu Diva Norvelina, Jabatan: HR Manager at RSM Indonesia"`}
+                  rows={3}
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-gray-400"
+                />
+                <p className="text-xs text-gray-400 text-right mt-1">{userRequest.length}/500</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              {savedFor(pendingGenType) && (
+                <button
+                  onClick={() => { select(pendingGenType!); setPendingGenType(null) }}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:border-primary hover:text-primary transition-all"
+                >
+                  Lihat Draft
+                </button>
+              )}
+              <button
+                onClick={() => { generate(pendingGenType!); setPendingGenType(null) }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+              >
+                <Sparkles size={14} /> Generate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PDF Preview Modal */}
       {pdfPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -2190,7 +2303,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
 }
 
 // ── ANALYZE TAB ──────────────────────────────────────────────────────────────
-function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, onGoToProfile, onGoToSettings }: { onJobAdded: (job: Partial<JobApplication>) => Promise<JobApplication | null>; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; profile: string; configuredKeys: ConfiguredKeys; onGoToProfile: () => void; onGoToSettings: () => void }) {
+function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoaded, onGoToProfile, onGoToSettings }: { onJobAdded: (job: Partial<JobApplication>) => Promise<JobApplication | null>; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; profile: string; configuredKeys: ConfiguredKeys; keysLoaded: boolean; onGoToProfile: () => void; onGoToSettings: () => void }) {
   const hasGeminiKey = !!configuredKeys.gemini
   const [url, setUrl] = useState('')
   const [jobDesc, setJobDesc] = useState('')
@@ -2324,7 +2437,7 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, onGoToPr
 
   return (
     <div className="space-y-4">
-      {!hasGeminiKey && (
+      {keysLoaded && !hasGeminiKey && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
           <Key size={16} className="flex-shrink-0" />
           <span>Gemini API key belum diset. Fitur AI tidak akan jalan tanpa key.</span>
@@ -3395,10 +3508,11 @@ function WorldClockTab() {
 }
 
 // ── CARI LOKER TAB (wrapper: keyword search + best-fit finder) ───────────────
-function CariLokerTab({ jobs, profile, configuredKeys, onJobAdded, onGoToSettings, onGoToProfile, onGoToTracker }: {
+function CariLokerTab({ jobs, profile, configuredKeys, keysLoaded, onJobAdded, onGoToSettings, onGoToProfile, onGoToTracker }: {
   jobs: JobApplication[]
   profile: string
   configuredKeys: ConfiguredKeys
+  keysLoaded: boolean
   onJobAdded: (data: Partial<JobApplication>) => Promise<JobApplication | null>
   onGoToSettings: () => void
   onGoToProfile: () => void
@@ -3424,7 +3538,7 @@ function CariLokerTab({ jobs, profile, configuredKeys, onJobAdded, onGoToSetting
           onGoToSettings={onGoToSettings} onGoToTracker={onGoToTracker} />
       )}
       {mode === 'bestfit' && (
-        <BestFitTab profile={profile} configuredKeys={configuredKeys} onJobAdded={onJobAdded}
+        <BestFitTab profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onJobAdded={onJobAdded}
           onGoToSettings={onGoToSettings} onGoToProfile={onGoToProfile} />
       )}
     </div>
@@ -3440,9 +3554,10 @@ interface FitRanking {
   job: { title: string; company: string; description: string; location: string; url: string }
 }
 
-function BestFitTab({ profile, configuredKeys, onJobAdded, onGoToSettings, onGoToProfile }: {
+function BestFitTab({ profile, configuredKeys, keysLoaded, onJobAdded, onGoToSettings, onGoToProfile }: {
   profile: string
   configuredKeys: ConfiguredKeys
+  keysLoaded: boolean
   onJobAdded: (data: Partial<JobApplication>) => Promise<JobApplication | null>
   onGoToSettings: () => void
   onGoToProfile: () => void
@@ -3500,7 +3615,7 @@ function BestFitTab({ profile, configuredKeys, onJobAdded, onGoToSettings, onGoT
 
   return (
     <div className="space-y-5">
-      {!configuredKeys.gemini && (
+      {keysLoaded && !configuredKeys.gemini && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
           <Key size={16} className="shrink-0" />
           <span>Gemini API key belum diset — fitur ini butuh AI.</span>
@@ -3892,7 +4007,7 @@ function PrepResults({ data, role = '', company = '' }: { data: PrepResult; role
   )
 }
 
-function PrepTab({ jobs, profile, configuredKeys, onUpdateJob, onGoToProfile, onGoToSettings }: { jobs: JobApplication[]; profile: string; configuredKeys: ConfiguredKeys; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; onGoToProfile: () => void; onGoToSettings: () => void }) {
+function PrepTab({ jobs, profile, configuredKeys, keysLoaded, onUpdateJob, onGoToProfile, onGoToSettings }: { jobs: JobApplication[]; profile: string; configuredKeys: ConfiguredKeys; keysLoaded: boolean; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; onGoToProfile: () => void; onGoToSettings: () => void }) {
   const hasGeminiKey = !!configuredKeys.gemini
   const [selectedJobId, setSelectedJobId] = useState('')
   const [loading, setLoading] = useState(false)

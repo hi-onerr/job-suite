@@ -4,8 +4,10 @@ import { getUserId } from '../../lib/session'
 import { encrypt } from '../../lib/crypto'
 
 // POST /api/import — one-time migration of a user's old localStorage data into
-// their account (see PHASE0-PLAN.md §5). Accepts:
+// their account. Accepts:
 //   { applications?: JobApplication[], profile?: string, apiKeys?: Record<string,string> }
+// Uses individual create/update instead of createMany/upsert to avoid Prisma
+// implicit transactions (not supported by the Neon HTTP adapter).
 export async function POST(req: NextRequest) {
   const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -19,25 +21,26 @@ export async function POST(req: NextRequest) {
   }
 
   if (Array.isArray(applications) && applications.length) {
-    // createMany skips nothing here; callers should only import once.
-    await prisma.application.createMany({
-      data: applications.map((j: any) => ({
-        userId,
-        company: j.company || 'Unknown Company',
-        role: j.role || 'Unknown Role',
-        location: j.location || null,
-        url: j.url || null,
-        jobDesc: j.jobDesc || '',
-        status: j.status || 'saved',
-        matchScore: typeof j.matchScore === 'number' ? j.matchScore : 0,
-        appliedDate: j.appliedDate || null,
-        deadline: j.deadline || null,
-        notes: j.notes || null,
-        salary: j.salary || null,
-        createdAt: j.createdAt ? new Date(j.createdAt) : undefined,
-      })),
-    })
-    summary.applications = applications.length
+    for (const j of applications) {
+      await prisma.application.create({
+        data: {
+          userId,
+          company: j.company || 'Unknown Company',
+          role: j.role || 'Unknown Role',
+          location: j.location || null,
+          url: j.url || null,
+          jobDesc: j.jobDesc || '',
+          status: j.status || 'saved',
+          matchScore: typeof j.matchScore === 'number' ? j.matchScore : 0,
+          appliedDate: j.appliedDate || null,
+          deadline: j.deadline || null,
+          notes: j.notes || null,
+          salary: j.salary || null,
+          createdAt: j.createdAt ? new Date(j.createdAt) : undefined,
+        },
+      })
+      summary.applications++
+    }
   }
 
   if (apiKeys && typeof apiKeys === 'object') {
@@ -45,11 +48,15 @@ export async function POST(req: NextRequest) {
       const trimmed = (value ?? '').trim()
       if (!trimmed) continue
       const { ciphertext, iv, authTag } = encrypt(trimmed)
-      await prisma.apiKey.upsert({
-        where: { userId_provider: { userId, provider } },
-        create: { userId, provider, ciphertext, iv, authTag },
-        update: { ciphertext, iv, authTag },
+      const existing = await prisma.apiKey.findFirst({
+        where: { userId, provider },
+        select: { id: true },
       })
+      if (existing) {
+        await prisma.apiKey.update({ where: { id: existing.id }, data: { ciphertext, iv, authTag } })
+      } else {
+        await prisma.apiKey.create({ data: { userId, provider, ciphertext, iv, authTag } })
+      }
       summary.keys++
     }
   }

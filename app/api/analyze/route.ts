@@ -65,11 +65,28 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         const t = salarySearch.text
         const cur = location === 'Indonesia' ? 'IDR' : location.match(/singapore/i) ? 'SGD' : location.match(/malaysia/i) ? 'MYR' : location.match(/australia/i) ? 'AUD' : location.match(/usa|united states/i) ? 'USD' : location.match(/uk|united kingdom/i) ? 'GBP' : 'local currency'
         // Try "X,XXX,XXX to/– Y,YYY,YYY" or "Rp X to/– Rp Y" or "X juta – Y juta"
-        const rangeMatch = t.match(/(?:Rp\.?\s*)?([\d,\.]+(?:\s*(?:juta|jt|million|k))?)\s*(?:to|-|–)\s*(?:Rp\.?\s*)?([\d,\.]+(?:\s*(?:juta|jt|million|k))?)/i)
-        if (rangeMatch) {
-          const clean = (v: string) => v.trim().replace(/\.$/, '')
-          data.salaryRange = `${cur} ${clean(rangeMatch[1])} – ${clean(rangeMatch[2])} / bulan (gross)`
-        } else {
+        // Match salary ranges — require currency prefix OR juta/jt/million suffix to avoid matching years
+        const rangePatterns = [
+          // "Rp 5,000,000 – 10,000,000" or "IDR 5.000.000 – 10.000.000"
+          /(?:Rp\.?\s*|IDR\s*)([\d,\.]+(?:\s*(?:juta|jt|million|k))?)\s*(?:to|-|–|s\/d)\s*(?:Rp\.?\s*|IDR\s*)?([\d,\.]+(?:\s*(?:juta|jt|million|k))?)/i,
+          // "5 juta – 10 juta" or "5 jt – 10 jt"
+          /([\d,\.]+\s*(?:juta|jt|million))\s*(?:to|-|–|s\/d)\s*([\d,\.]+\s*(?:juta|jt|million))/i,
+          // Bare numbers but must be > 999 (not years like 2024–2025)
+          /([\d,\.]{4,})\s*(?:to|-|–)\s*([\d,\.]{4,})/,
+        ]
+        const isYear = (s: string) => { const n = parseFloat(s.replace(/[,.]/g, '')); return n >= 2000 && n <= 2035 }
+        const clean = (v: string) => v.trim().replace(/\.$/, '')
+
+        let matched = false
+        for (const pat of rangePatterns) {
+          const m = t.match(pat)
+          if (m && !isYear(m[1]) && !isYear(m[2])) {
+            data.salaryRange = `${cur} ${clean(m[1])} – ${clean(m[2])} / bulan (gross)`
+            matched = true
+            break
+          }
+        }
+        if (!matched) {
           // Fallback: use first 120 chars that look like a salary statement
           const snip = t.slice(0, 300).replace(/\n/g, ' ').trim()
           data.salaryRange = snip.length > 20 ? snip.slice(0, 120) : null

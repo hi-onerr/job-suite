@@ -14,6 +14,8 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
     "@google/generative-ai": "^0.15.0",
+    "@neondatabase/serverless": "^1.1.0",
+    "@prisma/adapter-neon": "^7.8.0",
     "@prisma/client": "^6.19.3",
     "@types/pdfmake": "^0.3.3",
     "axios": "^1.7.2",
@@ -30,7 +32,8 @@
     "prisma": "^6.19.3",
     "react": "^18",
     "react-dom": "^18",
-    "sweetalert2": "^11.26.25"
+    "sweetalert2": "^11.26.25",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
