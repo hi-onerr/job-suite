@@ -80,6 +80,52 @@ export function generateText(genAI: GoogleGenerativeAI, prompt: string): Promise
   return runWithFallback(genAI, [prompt])
 }
 
+export interface TokenUsage {
+  promptTokens: number
+  outputTokens: number
+  totalTokens: number
+  model: string
+}
+
+/** Like generateText but also returns token usage metadata. */
+export async function generateTextWithUsage(
+  genAI: GoogleGenerativeAI,
+  prompt: string,
+): Promise<{ text: string; usage: TokenUsage | null }> {
+  let lastErr: any
+  const MAX_PASSES = 3
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    for (const name of MODEL_CANDIDATES) {
+      const t = Date.now()
+      try {
+        const model = genAI.getGenerativeModel({ model: name })
+        const result = await model.generateContent([prompt])
+        console.log(`[gemini] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
+        const meta = result.response.usageMetadata
+        const usage: TokenUsage | null = meta
+          ? {
+              promptTokens: meta.promptTokenCount ?? 0,
+              outputTokens: meta.candidatesTokenCount ?? 0,
+              totalTokens: meta.totalTokenCount ?? 0,
+              model: name,
+            }
+          : null
+        return { text: result.response.text(), usage }
+      } catch (e: any) {
+        lastErr = e
+        console.warn(`[gemini] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 80)}`)
+        if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+        throw e
+      }
+    }
+    if (!isOverloadError(lastErr)) break
+    const delay = 800 * (pass + 1)
+    console.warn(`[gemini] all models overloaded, sleeping ${delay}ms before pass ${pass + 1}`)
+    await new Promise(r => setTimeout(r, delay))
+  }
+  throw lastErr
+}
+
 export interface SearchGroundedResult {
   text: string
   sources: { url: string; title: string }[]

@@ -6,12 +6,12 @@ import {
   Briefcase, FileText, Mail, Brain, BarChart2,
   Plus, ExternalLink, Trash2, CheckCircle, BookmarkPlus,
   Clock, XCircle, Star, ChevronRight,
-  AlertCircle, Upload, User, Settings, Key, LogOut, LogIn,
+  AlertCircle, Upload, User, Settings, Key, LogOut,
   Sparkles, TrendingUp, Target, Send, Award, MapPin, Phone, Linkedin, GraduationCap, Lightbulb,
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
   RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X,
 } from 'lucide-react'
-import { exportPdf, exportDocx, exportFileName, guessCandidateName, getPdfBlob, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
+import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
 
 // ── API KEY PROVIDERS ─────────────────────────────────────────────────────────
@@ -656,7 +656,7 @@ function AppShell() {
                 <AnalyzeTab onJobAdded={addJob} onUpdateJob={updateJob} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
               )}
               {activeTab === 'prep' && (
-                <PrepTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onUpdateJob={updateJob} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
+                <PrepTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} onUpdateJob={updateJob} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
               )}
               {activeTab === 'profile' && (
                 <ProfileTab
@@ -1759,6 +1759,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [activeGen, setActiveGen] = useState<DocType | null>(null)
   const [generatedContent, setGeneratedContent] = useState('')
   const [genLoading, setGenLoading] = useState(false)
+  const [lastUsage, setLastUsage] = useState<{ promptTokens: number; outputTokens: number; totalTokens: number; model: string } | null>(null)
   const [pageCount, setPageCount] = useState(1)
   const [userRequest, setUserRequest] = useState('')
   const [atsScore, setAtsScore] = useState<number | null>(null)
@@ -1879,6 +1880,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
     setGenLoading(true)
     setGeneratedContent('')
     setAtsScore(null)
+    setLastUsage(null)
 
     // Notify if AI is taking >10s
     const slowTimer = setTimeout(() => {
@@ -1896,6 +1898,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
       const data = await res.json()
       if (!res.ok) { showError(data.error || 'Generation failed.'); return }
       setGeneratedContent(data.content)
+      setLastUsage(data.usage ?? null)
       upsert(type, data.content)
       if (type === 'cv') rescore(data.content)
       showToast(`${DOC_LABEL[type]} selesai dibuat!`, 'success')
@@ -2039,7 +2042,20 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
       {generatedContent && !genLoading && activeGen && (
         <div>
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <p className="text-xs font-medium text-gray-500">{DOC_TYPES.find(d => d.type === activeGen)?.label} Content</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs font-medium text-gray-500">{DOC_TYPES.find(d => d.type === activeGen)?.label} Content</p>
+              {lastUsage && (
+                <span className="inline-flex items-center gap-1.5 text-[10px] bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5">
+                  <span className="text-gray-400 font-medium">{lastUsage.model}</span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-500">input <span className="font-semibold text-blue-500">{lastUsage.promptTokens.toLocaleString()}</span></span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-500">output <span className="font-semibold text-green-500">{lastUsage.outputTokens.toLocaleString()}</span></span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-500">total <span className="font-semibold text-gray-700">{lastUsage.totalTokens.toLocaleString()}</span> tokens</span>
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {/* Regenerate — cv/coverletter/linkedin open modal to confirm settings */}
               <button
@@ -2072,7 +2088,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                       const blob = await getPdfBlob(generatedContent, activeGen!)
                       const url = URL.createObjectURL(blob)
                       setPdfPreview({ url, fileName: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`, blob })
-                    } catch { showError('Gagal membuat preview PDF.') }
+                    } catch (e: any) { showError(e?.message || 'Gagal membuat preview PDF. Coba lagi.') }
                     finally { setPdfGenerating(false) }
                   }}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
@@ -2276,11 +2292,52 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 <button
-                  onClick={() => {
-                    const a = document.createElement('a')
-                    a.href = pdfPreview.url
-                    a.download = pdfPreview.fileName
-                    a.click()
+                  onClick={async () => {
+                    const { blob, fileName } = pdfPreview
+                    try {
+                      // Convert blob to base64
+                      const base64 = await new Promise<string>((resolve, reject) => {
+                        const fr = new FileReader()
+                        fr.onload = () => {
+                          const r = fr.result as string
+                          resolve(r.includes(',') ? r.split(',')[1] : r)
+                        }
+                        fr.onerror = () => reject(fr.error)
+                        fr.readAsDataURL(blob)
+                      })
+                      // POST to server which returns proper Content-Disposition: attachment.
+                      // Submit via hidden iframe — browser processes the HTTP response
+                      // natively, bypassing corporate JavaScript download restrictions.
+                      const iframeName = `_pdfdl_${Date.now()}`
+                      const iframe = document.createElement('iframe')
+                      iframe.name = iframeName
+                      iframe.style.display = 'none'
+                      document.body.appendChild(iframe)
+
+                      const form = document.createElement('form')
+                      form.method = 'POST'
+                      form.action = '/api/pdf-export'
+                      form.target = iframeName
+
+                      const addField = (name: string, value: string) => {
+                        const inp = document.createElement('input')
+                        inp.type = 'hidden'
+                        inp.name = name
+                        inp.value = value
+                        form.appendChild(inp)
+                      }
+                      addField('data', base64)
+                      addField('filename', fileName)
+
+                      document.body.appendChild(form)
+                      form.submit()
+                      setTimeout(() => {
+                        document.body.removeChild(form)
+                        document.body.removeChild(iframe)
+                      }, 10000)
+                    } catch (e: any) {
+                      showError(`Gagal download PDF: ${e?.message || e}`)
+                    }
                   }}
                   className="flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 px-4 py-2 rounded-lg transition-all shadow-sm"
                 >
@@ -2542,8 +2599,18 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
           </div>
 
           <div className="flex gap-2 mt-3">
-            <button onClick={analyze} disabled={loading || !jobDesc} className="btn-primary text-sm flex-1">
-              {loading ? 'Analyzing...' : 'Analyze Match'}
+            <button onClick={analyze} disabled={loading || !jobDesc} className="btn-primary text-sm flex-1 relative overflow-hidden">
+              {loading && (
+                <span className="absolute inset-0 flex items-center justify-center gap-2">
+                  <span className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-bounce [animation-delay:0ms]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-bounce [animation-delay:300ms]" />
+                  </span>
+                  <span className="text-sm">Analyzing...</span>
+                </span>
+              )}
+              <span className={loading ? 'invisible' : ''}>Analyze Match</span>
             </button>
             <button onClick={saveToTracker} disabled={!jobDesc} className="btn-secondary text-sm">
               Simpan
@@ -4013,7 +4080,7 @@ function PrepResults({ data, role = '', company = '' }: { data: PrepResult; role
   )
 }
 
-function PrepTab({ jobs, profile, configuredKeys, keysLoaded, onUpdateJob, onGoToProfile, onGoToSettings }: { jobs: JobApplication[]; profile: string; configuredKeys: ConfiguredKeys; keysLoaded: boolean; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; onGoToProfile: () => void; onGoToSettings: () => void }) {
+function PrepTab({ jobs, profile, configuredKeys, onUpdateJob, onGoToProfile, onGoToSettings }: { jobs: JobApplication[]; profile: string; configuredKeys: ConfiguredKeys; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; onGoToProfile: () => void; onGoToSettings: () => void }) {
   const hasGeminiKey = !!configuredKeys.gemini
   const [selectedJobId, setSelectedJobId] = useState('')
   const [loading, setLoading] = useState(false)

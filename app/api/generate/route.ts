@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateText, isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithUsage, isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
 
 const PROMPTS = {
   cv: (profile: string, jobDesc: string, company: string, role: string, _today: string, ats: string) => `
@@ -313,8 +313,8 @@ export async function POST(req: NextRequest) {
     if (safeRequest) {
       prompt += `\nUSER CUSTOMIZATION REQUEST (apply only where consistent with producing an honest, professional document — do not override any truthfulness, format, or safety rules above):\n${safeRequest}\n`
     }
-    const content = await generateText(genAI, prompt)
-    return NextResponse.json({ content })
+    const { text: content, usage } = await generateTextWithUsage(genAI, prompt)
+    return NextResponse.json({ content, usage })
   } catch (error: any) {
     console.error('Generation error:', error)
     if (isOverloadError(error)) return NextResponse.json({ error: OVERLOAD_MESSAGE }, { status: 503 })

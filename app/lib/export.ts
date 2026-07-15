@@ -304,9 +304,19 @@ async function loadPdfMake() {
   const pdfMakeMod = await import('pdfmake/build/pdfmake')
   // @ts-ignore
   const vfsMod = await import('pdfmake/build/vfs_fonts')
-  const pdfMake: any = (pdfMakeMod as any).default || pdfMakeMod
-  const vfsAny: any = (vfsMod as any).default || vfsMod
-  pdfMake.vfs = vfsAny.pdfMake?.vfs || vfsAny.vfs || vfsAny
+  const pdfMake: any = (pdfMakeMod as any).default ?? pdfMakeMod
+  const vfsRaw: any = (vfsMod as any).default ?? vfsMod
+  // Try every known export shape of vfs_fonts across pdfmake versions
+  const vfs = vfsRaw?.pdfMake?.vfs ?? vfsRaw?.vfs ?? (typeof vfsRaw === 'object' && !Array.isArray(vfsRaw) ? vfsRaw : null)
+  if (vfs && typeof vfs === 'object' && Object.keys(vfs).length > 0) {
+    pdfMake.vfs = vfs
+  } else {
+    // VFS failed — fall back to standard PDF fonts (no embedding needed)
+    console.warn('[pdfmake] vfs_fonts did not load; falling back to Helvetica')
+    pdfMake.fonts = {
+      Helvetica: { normal: 'Helvetica', bold: 'Helvetica-Bold', italics: 'Helvetica-Oblique', bolditalics: 'Helvetica-BoldOblique' },
+    }
+  }
   return pdfMake
 }
 
@@ -315,17 +325,43 @@ function buildDocDefinition(text: string, kind: DocKind) {
   if (kind === 'cv') { const cv = parseCv(text); content = cv ? cvPdfContent(cv) : genericPdfContent(text) }
   else if (kind === 'coverletter') { const cl = parseCoverLetter(text); content = cl ? coverLetterPdfContent(cl) : genericPdfContent(text) }
   else content = genericPdfContent(text)
-  return { pageSize: 'A4', pageMargins: [40, 36, 40, 40], defaultStyle: { fontSize: 9.5, lineHeight: 1.13, color: '#1a1a1a' }, content }
+  return {
+    pageSize: 'A4',
+    pageMargins: [40, 36, 40, 40],
+    defaultStyle: { fontSize: 9.5, lineHeight: 1.13, color: '#1a1a1a', font: 'Roboto' },
+    content,
+  }
 }
 
 export async function getPdfBlob(text: string, kind: DocKind = 'cv'): Promise<Blob> {
   const pdfMake = await loadPdfMake()
-  return new Promise<Blob>(resolve => pdfMake.createPdf(buildDocDefinition(text, kind)).getBlob(resolve))
+  return new Promise<Blob>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('PDF generation timed out — coba lagi')), 20000)
+    try {
+      pdfMake.createPdf(buildDocDefinition(text, kind)).getBlob((raw: Blob) => {
+        clearTimeout(timeout)
+        if (raw && raw.size > 100) {
+          const blob = raw.type === 'application/pdf' ? raw : new Blob([raw], { type: 'application/pdf' })
+          resolve(blob)
+        } else {
+          reject(new Error('PDF kosong atau corrupt — coba lagi'))
+        }
+      })
+    } catch (e: any) {
+      clearTimeout(timeout)
+      reject(e)
+    }
+  })
 }
 
 export async function exportPdf(text: string, fileName: string, kind: DocKind = 'cv') {
-  const pdfMake = await loadPdfMake()
-  pdfMake.createPdf(buildDocDefinition(text, kind)).download(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`)
+  const blob = await getPdfBlob(text, kind)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
 // ── DOCX ────────────────────────────────────────────────────────────────────
@@ -521,19 +557,28 @@ function prepPdfContent(p: PrepExportData): any[] {
 }
 
 export async function exportPrepPdf(prep: PrepExportData, fileName: string) {
-  // @ts-ignore
-  const pdfMakeMod = await import('pdfmake/build/pdfmake')
-  // @ts-ignore
-  const vfsMod = await import('pdfmake/build/vfs_fonts')
-  const pdfMake: any = (pdfMakeMod as any).default || pdfMakeMod
-  const vfsAny: any = (vfsMod as any).default || vfsMod
-  pdfMake.vfs = vfsAny.pdfMake?.vfs || vfsAny.vfs || vfsAny
+  const pdfMake = await loadPdfMake()
   const docDefinition = {
     pageSize: 'A4', pageMargins: [40, 36, 40, 40],
-    defaultStyle: { fontSize: 9.5, lineHeight: 1.18, color: '#1a1a1a' },
+    defaultStyle: { fontSize: 9.5, lineHeight: 1.18, color: '#1a1a1a', font: 'Roboto' },
     content: prepPdfContent(prep),
   }
-  pdfMake.createPdf(docDefinition).download(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`)
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('PDF generation timed out')), 20000)
+    try {
+      pdfMake.createPdf(docDefinition).getBlob((blob: Blob) => {
+        clearTimeout(timeout)
+        if (blob && blob.size > 100) resolve(blob)
+        else reject(new Error('PDF kosong atau corrupt'))
+      })
+    } catch (e: any) { clearTimeout(timeout); reject(e) }
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
 export async function exportPrepDocx(prep: PrepExportData, fileName: string) {
