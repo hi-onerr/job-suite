@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateText, isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getUserId } from '../../lib/session'
+import { getUserKey } from '../../lib/keys'
 
 // Fold a prior match analysis into concrete guidance for the improver.
 function analysisContext(analysis: any): string {
@@ -14,6 +16,9 @@ function analysisContext(analysis: any): string {
 // POST /api/improve-cv — actionable, honest suggestions to raise the CV's ATS
 // fit for a specific job, plus a rewritten summary weaving in real keywords.
 export async function POST(req: NextRequest) {
+  const userId = await getUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { jobDesc, profile, analysis } = await req.json()
   if (!jobDesc || !profile) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -23,6 +28,8 @@ export async function POST(req: NextRequest) {
   if (!genAI) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
+
+  const groqKey = await getUserKey(userId, 'groq')
 
   // Truncate — full CV text slows the model significantly without adding value
   const profileTrimmed = profile.slice(0, 6000)
@@ -49,14 +56,16 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
 
 Rules: never fabricate roles, tools, or metrics. If a gap cannot be truthfully addressed, suggest how to reframe genuinely related experience instead. Use the job description's exact terminology where the candidate really has that experience. No em dashes.`
 
-    const text = await generateText(genAI, prompt)
-    console.log(`[improve-cv] gemini done in ${Date.now() - t0}ms`)
+    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey)
+    console.log(`[improve-cv] done in ${Date.now() - t0}ms via ${provider}`)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)
-    return NextResponse.json(data)
+    return NextResponse.json({ ...data, _provider: provider })
   } catch (error: any) {
     console.error(`[improve-cv] error after ${Date.now() - t0}ms:`, error)
+    if (isAllProvidersFailedError(error)) return NextResponse.json({ error: ALL_PROVIDERS_MESSAGE }, { status: 429 })
     if (isOverloadError(error)) return NextResponse.json({ error: OVERLOAD_MESSAGE }, { status: 503 })
+    if (isRateLimitError(error)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 })
     if (isQuotaError(error)) return NextResponse.json({ error: QUOTA_MESSAGE }, { status: 429 })
     return NextResponse.json({ error: 'Gagal membuat saran perbaikan.', detail: error.message }, { status: 500 })
   }

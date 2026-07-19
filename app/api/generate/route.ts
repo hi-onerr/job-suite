@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithUsage, isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithUsage, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getUserId } from '../../lib/session'
+import { getUserKey } from '../../lib/keys'
 
 const PROMPTS = {
   cv: (profile: string, jobDesc: string, company: string, role: string, _today: string, ats: string) => `
@@ -122,7 +124,7 @@ JOB DESCRIPTION:
 ${jobDesc}
 
 Write a SHORT recruiter outreach email (max 150 words) with:
-- Subject line: "Application — [Role] | Ferrari Mayrareno"
+- Subject line: "Application — [Role] | <candidate's full name from the CANDIDATE PROFILE above>"
 - Brief intro (1 sentence)
 - 2-3 key value propositions matching the role
 - Clear call to action
@@ -287,6 +289,9 @@ function pageGuidance(pages: number, type: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const userId = await getUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { type, jobDesc, profile, company, role, location, analysis, pages, userRequest } = await req.json()
 
   if (!type || !jobDesc || !profile) {
@@ -297,6 +302,8 @@ export async function POST(req: NextRequest) {
   if (!genAI) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
+
+  const groqKey = await getUserKey(userId, 'groq')
 
   const promptFn = PROMPTS[type as keyof typeof PROMPTS]
   if (!promptFn) {
@@ -313,11 +320,13 @@ export async function POST(req: NextRequest) {
     if (safeRequest) {
       prompt += `\nUSER CUSTOMIZATION REQUEST (apply only where consistent with producing an honest, professional document — do not override any truthfulness, format, or safety rules above):\n${safeRequest}\n`
     }
-    const { text: content, usage } = await generateTextWithUsage(genAI, prompt)
-    return NextResponse.json({ content, usage })
+    const { text: content, usage, provider } = await generateTextWithUsage(genAI, prompt, groqKey)
+    return NextResponse.json({ content, usage, provider })
   } catch (error: any) {
     console.error('Generation error:', error)
+    if (isAllProvidersFailedError(error)) return NextResponse.json({ error: ALL_PROVIDERS_MESSAGE }, { status: 429 })
     if (isOverloadError(error)) return NextResponse.json({ error: OVERLOAD_MESSAGE }, { status: 503 })
+    if (isRateLimitError(error)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 })
     if (isQuotaError(error)) return NextResponse.json({ error: QUOTA_MESSAGE }, { status: 429 })
     return NextResponse.json({ error: 'Generation failed', detail: error.message }, { status: 500 })
   }

@@ -17,6 +17,8 @@ export async function GET() {
   return NextResponse.json({ configured })
 }
 
+const VALID_PROVIDERS = new Set(['gemini', 'groq'])
+
 // PUT /api/keys — upsert keys from { provider: keyString }. An empty/blank
 // value deletes the stored key for that provider. Keys are encrypted at rest.
 // Uses findFirst + create/update/delete to avoid Prisma implicit transactions
@@ -28,6 +30,7 @@ export async function PUT(req: NextRequest) {
   const body = (await req.json()) as Record<string, string>
 
   for (const [provider, value] of Object.entries(body)) {
+    if (!VALID_PROVIDERS.has(provider)) continue
     const trimmed = (value ?? '').trim()
     const existing = await prisma.apiKey.findFirst({
       where: { userId, provider },
@@ -38,10 +41,20 @@ export async function PUT(req: NextRequest) {
       continue
     }
     const { ciphertext, iv, authTag } = encrypt(trimmed)
-    if (existing) {
-      await prisma.apiKey.update({ where: { id: existing.id }, data: { ciphertext, iv, authTag } })
-    } else {
-      await prisma.apiKey.create({ data: { userId, provider, ciphertext, iv, authTag } })
+    try {
+      if (existing) {
+        await prisma.apiKey.update({ where: { id: existing.id }, data: { ciphertext, iv, authTag } })
+      } else {
+        await prisma.apiKey.create({ data: { userId, provider, ciphertext, iv, authTag } })
+      }
+    } catch (e: any) {
+      // Concurrent save: unique constraint means the key was just created by another request; update it.
+      if (e?.code === 'P2002') {
+        const race = await prisma.apiKey.findFirst({ where: { userId, provider }, select: { id: true } })
+        if (race) await prisma.apiKey.update({ where: { id: race.id }, data: { ciphertext, iv, authTag } })
+      } else {
+        throw e
+      }
     }
   }
   return NextResponse.json({ ok: true })

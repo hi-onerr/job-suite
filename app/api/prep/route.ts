@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateText, generateTextWithSearch, isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getUserId } from '../../lib/session'
+import { getUserKey } from '../../lib/keys'
 
 export async function POST(req: NextRequest) {
+  const userId = await getUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { jobDesc, company, role, profile } = await req.json()
 
   if (!jobDesc || !profile) {
@@ -12,6 +17,8 @@ export async function POST(req: NextRequest) {
   if (!genAI) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
+
+  const groqKey = await getUserKey(userId, 'groq')
 
   try {
     // ── Detect international job location ─────────────────────────────────────
@@ -27,14 +34,16 @@ export async function POST(req: NextRequest) {
         genAI,
         `Find real interview questions and experiences reported by candidates for "${role}" at "${company}". ` +
         `Include questions from Glassdoor, LinkedIn interview reviews, and Indeed. ` +
-        `Summarise the most frequently mentioned questions and company-specific interview process details.`
+        `Summarise the most frequently mentioned questions and company-specific interview process details.`,
+        groqKey,
       ),
       generateTextWithSearch(
         genAI,
         `What is the actual salary range for "${role}" at "${company}" in ${isInternational ? detectedCity! : 'Indonesia'}? ` +
         `Find real data from Glassdoor Salary, LinkedIn Salary Insights, JobStreet, Indeed, or Levels.fyi. ` +
         `Include monthly gross figures in local currency, broken down by seniority level if available. ` +
-        `Cite the specific source and year of the data.`
+        `Cite the specific source and year of the data.`,
+        groqKey,
       ),
       isInternational
         ? generateTextWithSearch(
@@ -43,7 +52,8 @@ export async function POST(req: NextRequest) {
             `Break down: (1) rent for a 1-bedroom apartment, (2) groceries + dining out, (3) public transport pass, ` +
             `(4) utilities (electricity, water, internet), (5) miscellaneous (gym, entertainment, personal care). ` +
             `Also provide the approximate IDR exchange rate for ${detectedCity}'s local currency. ` +
-            `Source from Numbeo, Expatistan, or official cost-of-living guides.`
+            `Source from Numbeo, Expatistan, or official cost-of-living guides.`,
+            groqKey,
           )
         : Promise.resolve(null),
     ])
@@ -80,7 +90,6 @@ export async function POST(req: NextRequest) {
 
 Generate comprehensive interview preparation for this candidate.
 
-CANDIDATE: Ferrari Mayrareno
 PROFILE: ${profile}
 
 APPLYING TO: ${role} at ${company}
@@ -148,7 +157,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   "questions": [
     {
       "question": "<likely interview question 1>",
-      "suggestedAnswer": "<suggested answer using STAR method, personalized to Ferrari's experience. Write in plain prose — NO markdown, NO asterisks, NO bold markers. For STAR labels use: 'Situation:', 'Task:', 'Action:', 'Result:' as plain text.>",
+      "suggestedAnswer": "<suggested answer using STAR method, personalized to the candidate's profile. Write in plain prose — NO markdown, NO asterisks, NO bold markers. For STAR labels use: 'Situation:', 'Task:', 'Action:', 'Result:' as plain text.>",
       "tip": "<interview tip for this specific question>",
       "category": "<Behavioral|Technical|Situational|Motivational|Case / Problem-Solving|Culture Fit|Role-Specific>",
       "sources": [
@@ -214,7 +223,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   ],
   "questionsToRecruiter": [
     {
-      "question": "<insightful question Ferrari should ask the recruiter/interviewer about the role>",
+      "question": "<insightful question the candidate should ask the recruiter/interviewer about the role>",
       "context": "<why this question is smart to ask — 1 sentence>"
     },
     {
@@ -236,12 +245,13 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   ]
 }`
 
-    const text = await generateText(genAI, prompt)
+    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey)
 
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)
 
     // Attach live search metadata so the UI can show real source links
+    data._provider = provider
     data._searchSources = interviewSearch.sources
     data._searchQueries = interviewSearch.searchQueries
     data._salarySearchSources = salarySources
@@ -252,7 +262,9 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
     return NextResponse.json(data)
   } catch (error: any) {
     console.error('Prep error:', error)
+    if (isAllProvidersFailedError(error)) return NextResponse.json({ error: ALL_PROVIDERS_MESSAGE }, { status: 429 })
     if (isOverloadError(error)) return NextResponse.json({ error: OVERLOAD_MESSAGE }, { status: 503 })
+    if (isRateLimitError(error)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 })
     if (isQuotaError(error)) return NextResponse.json({ error: QUOTA_MESSAGE }, { status: 429 })
     return NextResponse.json({ error: 'Prep generation failed', detail: error.message }, { status: 500 })
   }

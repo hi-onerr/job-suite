@@ -9,10 +9,39 @@ import {
   AlertCircle, Upload, User, Settings, Key, LogOut,
   Sparkles, TrendingUp, Target, Send, Award, MapPin, Phone, Linkedin, GraduationCap, Lightbulb,
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
-  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X,
+  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X, Scale,
 } from 'lucide-react'
-import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, exportPrepPdf, exportPrepDocx, type PrepExportData } from './lib/export'
+import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, printPdf, exportPrepPdf, exportPrepDocx, type PrepExportData, type DocKind } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
+
+// ── PROVIDER BADGE ────────────────────────────────────────────────────────────
+function ProviderBadge({ provider }: { provider?: 'gemini' | 'groq' | null }) {
+  if (!provider) return null
+  if (provider === 'groq') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full border border-orange-200 font-medium">
+        <svg viewBox="0 0 24 24" className="w-3 h-3 flex-shrink-0" fill="currentColor">
+          <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 3c1.8 0 3.45.6 4.77 1.6L5.6 16.77A7 7 0 0 1 12 5zm0 14a7 7 0 0 1-4.77-1.6L18.4 7.23A7 7 0 0 1 12 19z"/>
+        </svg>
+        Groq
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200 font-medium">
+      <svg viewBox="0 0 24 24" className="w-3 h-3 flex-shrink-0" fill="none">
+        <path d="M12 2C12 7.52 7.52 12 2 12C7.52 12 12 16.48 12 22C12 16.48 16.48 12 22 12C16.48 12 12 7.52 12 2Z" fill="url(#gem-grad)"/>
+        <defs>
+          <linearGradient id="gem-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#4285F4"/>
+            <stop offset="100%" stopColor="#8B5CF6"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      Gemini
+    </span>
+  )
+}
 
 // ── API KEY PROVIDERS ─────────────────────────────────────────────────────────
 // Add a provider here + wire its header on the server to support a new LLM.
@@ -26,6 +55,7 @@ interface ApiProvider {
 
 const API_PROVIDERS: ApiProvider[] = [
   { id: 'gemini', label: 'Google Gemini', placeholder: 'AIza...', helpUrl: 'https://aistudio.google.com/app/apikey', active: true },
+  { id: 'groq', label: 'Groq (Llama 3.3)', placeholder: 'gsk_...', helpUrl: 'https://console.groq.com/keys', active: true },
   { id: 'anthropic', label: 'Anthropic Claude', placeholder: 'sk-ant-...', helpUrl: 'https://console.anthropic.com/settings/keys', active: false },
   { id: 'openai', label: 'OpenAI', placeholder: 'sk-...', helpUrl: 'https://platform.openai.com/api-keys', active: false },
 ]
@@ -102,6 +132,7 @@ interface PrepResult {
   _colSources?: { url: string; title: string }[]
   _isInternational?: boolean
   _detectedCity?: string | null
+  _provider?: 'gemini' | 'groq'
 }
 
 type DocType = 'cv' | 'coverletter' | 'email' | 'followup' | 'thankyou' | 'linkedin'
@@ -120,12 +151,14 @@ interface AnalysisResult {
   salaryRange?: string
   _salarySource?: string | null
   keywordsToAdd?: string[]
+  _provider?: 'gemini' | 'groq'
 }
 
 interface CvImprovement {
   suggestions?: string[]
   missingKeywords?: string[]
   rewrittenSummary?: string
+  _provider?: 'gemini' | 'groq'
 }
 
 interface Tab {
@@ -138,6 +171,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'tracker', label: 'Job Tracker', subtitle: 'Pantau semua lamaranmu di satu tempat', icon: <Briefcase size={18} /> },
   { id: 'search', label: 'Cari Loker', subtitle: 'Temukan lowongan yang cocok & simpan sekali klik', icon: <Search size={18} /> },
+  { id: 'compare', label: 'Best Fit Finder', subtitle: 'Bandingkan beberapa loker & ranking yang paling cocok denganmu', icon: <Scale size={18} /> },
   { id: 'analyze', label: 'Analyze & Generate', subtitle: 'Cek kecocokan & buat dokumen lamaran dengan AI', icon: <BarChart2 size={18} /> },
   { id: 'prep', label: 'Interview Prep', subtitle: 'Riset perusahaan & latihan pertanyaan interview', icon: <Brain size={18} /> },
   { id: 'worldclock', label: 'World Clock', subtitle: 'Jam kerja global — waktu terbaik apply loker luar negeri', icon: <Globe size={18} /> },
@@ -173,150 +207,353 @@ export default function HomePage() {
 }
 
 function SignInScreen() {
+  // ── Typewriter effect — cycling job roles ──────────────────────────────────
+  const JOB_ROLES = useMemo(() => [
+    'Data Analyst', 'Product Manager', 'Software Engineer',
+    'Business Analyst', 'UX Designer', 'Data Scientist',
+  ], [])
+  const [roleIdx, setRoleIdx] = useState(0)
+  const [typed, setTyped] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  useEffect(() => {
+    const target = JOB_ROLES[roleIdx]
+    let t: ReturnType<typeof setTimeout>
+    if (!isDeleting && typed.length < target.length)
+      t = setTimeout(() => setTyped(target.slice(0, typed.length + 1)), 75)
+    else if (!isDeleting && typed.length === target.length)
+      t = setTimeout(() => setIsDeleting(true), 2200)
+    else if (isDeleting && typed.length > 0)
+      t = setTimeout(() => setTyped(typed.slice(0, -1)), 38)
+    else { setIsDeleting(false); setRoleIdx(i => (i + 1) % JOB_ROLES.length) }
+    return () => clearTimeout(t)
+  }, [typed, isDeleting, roleIdx, JOB_ROLES])
+
+  // ── Mouse parallax on hero blobs ───────────────────────────────────────────
+  const heroRef = useRef<HTMLDivElement>(null)
+  const [parallax, setParallax] = useState({ x: 0, y: 0 })
+  const handleHeroMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = heroRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setParallax({
+      x: ((e.clientX - rect.left) / rect.width - 0.5) * 22,
+      y: ((e.clientY - rect.top) / rect.height - 0.5) * 22,
+    })
+  }, [])
+
+  // ── Animated counters ──────────────────────────────────────────────────────
+  const COUNT_TARGETS = useMemo(() => [247, 189, 312], [])
+  const [counts, setCounts] = useState([0, 0, 0])
+  useEffect(() => {
+    const steps = 60
+    let step = 0
+    const timer = setInterval(() => {
+      step++
+      const eased = 1 - Math.pow(1 - step / steps, 3)
+      setCounts(COUNT_TARGETS.map(t => Math.floor(t * eased)))
+      if (step >= steps) clearInterval(timer)
+    }, 1600 / steps)
+    return () => clearInterval(timer)
+  }, [COUNT_TARGETS])
+
+  // ── Live AI status ticker ──────────────────────────────────────────────────
+  const AI_STATUSES = useMemo(() => [
+    { text: 'Menganalisis kecocokan CV…',  dot: '#38bdf8' },
+    { text: 'Mencocokkan ATS keywords…',   dot: '#a78bfa' },
+    { text: 'Menghitung match score…',     dot: '#34d399' },
+    { text: 'Membuat saran perbaikan…',    dot: '#fbbf24' },
+    { text: 'Menghasilkan cover letter…',  dot: '#38bdf8' },
+  ], [])
+  const [statusIdx, setStatusIdx] = useState(0)
+  const [statusVisible, setStatusVisible] = useState(true)
+  useEffect(() => {
+    const t = setInterval(() => {
+      setStatusVisible(false)
+      setTimeout(() => { setStatusIdx(i => (i + 1) % AI_STATUSES.length); setStatusVisible(true) }, 280)
+    }, 2600)
+    return () => clearInterval(t)
+  }, [AI_STATUSES.length])
+
+  const HEADLINE_SETS = useMemo(() => [
+    { l1: 'Lamar kerja',     l2: 'lebih cerdas,',    l3: 'bukan lebih capek.',   em: '' },
+    { l1: 'Tetaplah',        l2: 'mencari kerja,',   l3: 'walaupun udah kerja.', em: ' wkwkw 😂' },
+    { l1: 'Masih open to',   l2: 'opportunities,',   l3: 'walau udah kerja.',    em: ' 😅' },
+    { l1: 'Jangan tunggu',   l2: 'merasa siap,',     l3: 'langsung apply.',      em: ' 🚀' },
+    { l1: 'Problem-nya',     l2: 'bukan CV-mu,',     l3: 'tapi apply-nya.',      em: ' 💪' },
+  ], [])
+  const [headlineSet, setHeadlineSet] = useState(0)
+  useEffect(() => {
+    // Interval matches CSS animation duration (5.5s) so the set change
+    // always lands in the invisible-reset phase of the loop (87.5%–100%).
+    const t = setInterval(() => {
+      setHeadlineSet(i => (i + 1) % HEADLINE_SETS.length)
+    }, 5500)
+    return () => clearInterval(t)
+  }, [HEADLINE_SETS.length])
+
   const FEATURES = [
     { icon: <Target size={15} />, title: 'ATS Match Score', desc: 'Tahu peluang lolosmu sebelum apply' },
     { icon: <Sparkles size={15} />, title: 'CV & Cover Letter AI', desc: 'Dokumen profesional dalam hitungan detik' },
     { icon: <Brain size={15} />, title: 'Interview Prep', desc: '10 pertanyaan + jawaban dari data nyata' },
     { icon: <TrendingUp size={15} />, title: 'Job Tracker', desc: 'Pantau semua lamaran di satu tempat' },
   ]
-  return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[1fr_480px]">
-      {/* ── Left: hero ── */}
-      <div className="relative hidden lg:flex flex-col justify-between p-14 text-white overflow-hidden"
-        style={{ background: 'linear-gradient(135deg,#0f2d6b 0%,#1a4fa8 45%,#0e7490 100%)' }}>
 
-        {/* Decorative blobs */}
-        <div className="absolute -top-32 -right-32 w-[28rem] h-[28rem] rounded-full opacity-20 blur-3xl"
-          style={{ background: 'radial-gradient(circle,#60a5fa,transparent)' }} />
-        <div className="absolute bottom-10 -left-24 w-72 h-72 rounded-full opacity-15 blur-3xl"
-          style={{ background: 'radial-gradient(circle,#818cf8,transparent)' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full opacity-[0.07] blur-2xl"
-          style={{ background: 'radial-gradient(circle,#ffffff,transparent)' }} />
+  const GeminiMark = ({ id }: { id: string }) => (
+    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" fill="none">
+      <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stopColor="#4285F4"/><stop offset="55%" stopColor="#9B72CB"/><stop offset="100%" stopColor="#D96570"/>
+      </linearGradient></defs>
+      <path d="M8 1C8 4.87 5.04 8 1 8c4.04 1 7 4.13 7 7 0-2.87 2.96-6 7-7C11 7 8 3.87 8 1z" fill={`url(#${id})`}/>
+    </svg>
+  )
+
+  const GroqMark = ({ light = false }: { light?: boolean }) => (
+    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" fill="none">
+      <rect width="16" height="16" rx="4" fill={light ? 'rgba(251,146,60,0.25)' : '#F97316'}/>
+      <path d="M8 3.5A4.5 4.5 0 1 0 12.5 8H9.5v1.5h1.46A3 3 0 1 1 8 5v0a3 3 0 0 1 2.12.88L11.18 4.82A4.48 4.48 0 0 0 8 3.5Z"
+        fill={light ? '#F97316' : 'white'}/>
+    </svg>
+  )
+
+  const STAT_ITEMS = useMemo(() => [
+    { icon: <Sparkles size={13} />, label: 'CV digenerate', count: counts[0] },
+    { icon: <Briefcase size={13} />, label: 'Lamaran dilacak', count: counts[1] },
+    { icon: <Brain size={13} />, label: 'Interview dipersiapkan', count: counts[2] },
+  ], [counts])
+
+  return (
+    <div className="min-h-screen lg:grid lg:grid-cols-[1fr_460px]">
+      {/* ── Left: hero ── */}
+      <div
+        ref={heroRef}
+        onMouseMove={handleHeroMouseMove}
+        className="relative hidden lg:flex flex-col justify-between p-14 text-white overflow-hidden"
+        style={{ background: 'linear-gradient(150deg,#060e24 0%,#0d2158 40%,#0a3d6b 70%,#054d60 100%)' }}
+      >
+        {/* Parallax blob layer — shifts with mouse */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ transform: `translate(${parallax.x * 0.45}px, ${parallax.y * 0.45}px)`, transition: 'transform 0.12s ease-out' }}
+        >
+          <div className="absolute -top-24 -right-24 w-[32rem] h-[32rem] rounded-full opacity-[0.18] blur-3xl animate-blob"
+            style={{ background: 'radial-gradient(circle,#6ea8fe,transparent)' }} />
+          <div className="absolute bottom-0 -left-32 w-80 h-80 rounded-full opacity-[0.12] blur-3xl animate-blob-alt"
+            style={{ background: 'radial-gradient(circle,#a78bfa,transparent)' }} />
+          <div className="absolute top-[45%] right-[15%] w-64 h-64 rounded-full opacity-[0.08] blur-2xl animate-blob-slow"
+            style={{ background: 'radial-gradient(circle,#fb923c,transparent)' }} />
+        </div>
+
+        {/* Floating ATS preview card */}
+        <div className="absolute bottom-24 right-10 hidden xl:block animate-slide-up anim-d1000 pointer-events-none">
+          <div className="w-48 bg-white/[0.07] backdrop-blur-xl rounded-2xl p-4 ring-1 ring-white/15 animate-float" style={{ animationDelay: '1.8s' }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold text-white/55 uppercase tracking-wide">ATS Score</span>
+              <span className="text-sm font-extrabold text-emerald-400">87%</span>
+            </div>
+            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+              <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full animate-progress-fill" />
+            </div>
+            <div className="flex flex-wrap gap-1 mb-3">
+              {['Python', 'SQL', 'Tableau', 'Analytics'].map(kw => (
+                <span key={kw} className="text-[9px] bg-emerald-400/15 text-emerald-300 px-1.5 py-0.5 rounded-full border border-emerald-400/20">
+                  ✓ {kw}
+                </span>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: AI_STATUSES[statusIdx].dot }} />
+              <p className="text-[9px] text-white/45 leading-tight transition-opacity duration-200" style={{ opacity: statusVisible ? 1 : 0 }}>
+                {AI_STATUSES[statusIdx].text}
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Logo */}
-        <div className="relative flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/15 backdrop-blur-sm rounded-xl flex items-center justify-center ring-1 ring-white/20">
+        <div className="relative flex items-center gap-3 animate-fade-in">
+          <div className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center ring-1 ring-white/15">
             <Briefcase size={20} />
           </div>
           <span className="font-bold text-lg tracking-tight">Job Application Suite</span>
         </div>
 
         {/* Hero copy */}
-        <div className="relative space-y-7">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1 text-xs font-medium text-white/90 ring-1 ring-white/20">
-              <svg viewBox="0 0 16 16" className="w-3 h-3 shrink-0" fill="none">
-                <defs><linearGradient id="hs" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#93c5fd"/><stop offset="100%" stopColor="#e879f9"/>
-                </linearGradient></defs>
-                <path d="M8 1C8 4.87 5.04 8 1 8c4.04 1 7 4.13 7 7 0-2.87 2.96-6 7-7C11 7 8 3.87 8 1z" fill="url(#hs)"/>
-              </svg>
-              Didukung Google Gemini AI
+        <div className="relative space-y-8">
+          <div className="space-y-4">
+            {/* Dual-AI badge + live status ticker */}
+            <div className="space-y-2 animate-slide-up anim-d100">
+              <div className="inline-flex items-center gap-2 bg-white/8 backdrop-blur-sm rounded-full pl-1.5 pr-3.5 py-1.5 ring-1 ring-white/15">
+                <div className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                  <span className="animate-twinkle inline-flex"><GeminiMark id="hero-gem" /></span>
+                  <span className="text-[11px] font-semibold text-white/90">Gemini</span>
+                </div>
+                <div className="w-px h-3 bg-white/20" />
+                <div className="flex items-center gap-1">
+                  <span className="animate-groq-pulse inline-flex"><GroqMark light /></span>
+                  <span className="text-[11px] font-semibold text-orange-300">Groq</span>
+                </div>
+                <span className="text-[10px] text-white/50 ml-0.5">Dual AI Engine</span>
+              </div>
+              {/* Live AI process ticker */}
+              <div className="flex items-center gap-2 ml-1">
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: AI_STATUSES[statusIdx].dot }} />
+                <p className="text-[11px] text-white/40 transition-opacity duration-200" style={{ opacity: statusVisible ? 1 : 0 }}>
+                  {AI_STATUSES[statusIdx].text}
+                </p>
+              </div>
             </div>
-            <h2 className="text-4xl font-extrabold leading-tight tracking-tight">
-              Lamar kerja<br />lebih cerdas,<br /><span className="text-sky-300">bukan lebih capek.</span>
+
+            {/* key= forces remount → CSS slide-up restarts from translateY(110%) (clipped/invisible).
+                Interval is synced to the 5.5s CSS loop so the swap lands in the invisible phase. */}
+            <h2 key={headlineSet} className="text-[2.6rem] font-extrabold leading-[1.15] tracking-tight">
+              <span className="block" style={{ clipPath: 'inset(0 0 -35% 0)' }}>
+                <span className="block animate-headline-loop" style={{ animationDelay: '0ms' }}>
+                  {HEADLINE_SETS[headlineSet].l1}
+                </span>
+              </span>
+              <span className="block" style={{ clipPath: 'inset(0 0 -35% 0)' }}>
+                <span className="block animate-headline-loop" style={{ animationDelay: '140ms' }}>
+                  {HEADLINE_SETS[headlineSet].l2}
+                </span>
+              </span>
+              <span className="block" style={{ clipPath: 'inset(0 0 -35% 0)' }}>
+                <span className="block animate-headline-loop" style={{ animationDelay: '280ms' }}>
+                  <span className="text-transparent bg-clip-text animate-shimmer-grad"
+                    style={{ backgroundImage: 'linear-gradient(90deg,#7dd3fc,#bae6fd,#a5f3fc,#7dd3fc)' }}>
+                    {HEADLINE_SETS[headlineSet].l3}
+                  </span>
+                  {/* Emoji must live outside bg-clip-text — color emoji are images,
+                      not glyphs, so -webkit-background-clip:text hides them */}
+                  {HEADLINE_SETS[headlineSet].em && (
+                    <span className="text-white">{HEADLINE_SETS[headlineSet].em}</span>
+                  )}
+                </span>
+              </span>
             </h2>
-            <p className="text-white/70 text-sm leading-relaxed max-w-sm">
+
+            {/* Typewriter role line */}
+            <div className="flex items-center gap-2 h-6 animate-slide-up anim-d250">
+              <span className="text-white/40 text-sm">Dirancang untuk</span>
+              <span className="text-sky-300 text-sm font-semibold tracking-tight">
+                {typed}<span className="animate-blink font-thin text-sky-400/70 ml-px">|</span>
+              </span>
+            </div>
+
+            <p className="text-white/60 text-sm leading-relaxed max-w-[22rem] animate-slide-up anim-d300">
               Analisis kecocokan CV, buat dokumen profesional, dan latihan interview — semua dibantu AI, semua di satu tempat.
             </p>
+
           </div>
 
-          {/* Feature list */}
-          <div className="space-y-3">
-            {FEATURES.map(f => (
-              <div key={f.title} className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/10 ring-1 ring-white/15 flex items-center justify-center shrink-0 text-sky-300">
+          {/* Feature list — staggered entrance with hover glow */}
+          <div className="space-y-2.5">
+            {FEATURES.map((f, i) => (
+              <div key={f.title}
+                className={`flex items-center gap-3 group animate-slide-up anim-d${400 + i * 100}`}>
+                <div className="w-8 h-8 rounded-lg bg-white/8 ring-1 ring-white/12 flex items-center justify-center shrink-0 text-sky-300 group-hover:bg-sky-400/15 group-hover:ring-sky-400/30 group-hover:text-sky-200 group-hover:scale-110 transition-all duration-200">
                   {f.icon}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold leading-none mb-0.5">{f.title}</p>
-                  <p className="text-xs text-white/60">{f.desc}</p>
+                  <p className="text-sm font-semibold leading-none mb-0.5 text-white/95 group-hover:text-white transition-colors">{f.title}</p>
+                  <p className="text-xs text-white/50 group-hover:text-white/60 transition-colors">{f.desc}</p>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Social proof */}
-          <div className="flex items-center gap-5 pt-2">
-            {([
-              { icon: <Sparkles size={16} />, label: 'CV digenerate' },
-              { icon: <Briefcase size={16} />, label: 'Lamaran dilacak' },
-              { icon: <Brain size={16} />, label: 'Interview dipersiapkan' },
-            ] as { icon: React.ReactNode; label: string }[]).map(({ icon, label }) => (
-              <div key={label} className="flex items-center gap-1.5">
-                <span className="text-sky-300 opacity-80">{icon}</span>
-                <p className="text-[11px] text-white/60">{label}</p>
+          {/* Stats row — animated counters */}
+          <div className="flex items-center gap-0 pt-1 animate-slide-up anim-d800">
+            {STAT_ITEMS.map(({ icon, label, count }, i) => (
+              <div key={label} className="flex items-center">
+                {i > 0 && <span className="w-px h-3 bg-white/15 mx-4" />}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sky-400/70">{icon}</span>
+                  <div>
+                    <p className="text-[13px] font-bold text-white/80 leading-none">{count}+</p>
+                    <p className="text-[10px] text-white/40 leading-none mt-0.5">{label}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="relative text-xs text-white/40">© {new Date().getFullYear()} Job Application Suite</p>
+        <p className="relative text-[11px] text-white/30 animate-fade-in anim-d1000">© {new Date().getFullYear()} Job Application Suite</p>
       </div>
 
       {/* ── Right: sign in card ── */}
-      <div className="flex items-center justify-center px-6 py-12 bg-gray-50">
-        <div className="w-full max-w-[360px] animate-fade-in">
+      <div className="flex items-center justify-center px-6 py-12 bg-[#f7f8fb]">
+        <div className="w-full max-w-[360px] space-y-4">
 
           {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2 mb-8">
+          <div className="lg:hidden flex items-center gap-2 mb-6 animate-fade-in">
             <div className="w-9 h-9 bg-brand-gradient rounded-xl flex items-center justify-center">
               <Briefcase size={18} className="text-white" />
             </div>
             <span className="font-bold text-gray-900">Job Suite</span>
           </div>
 
-          {/* Card */}
-          <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/60 border border-gray-100 p-8 space-y-6">
-            <div className="space-y-1">
-              <h1 className="font-extrabold text-gray-900 text-2xl tracking-tight">Selamat datang 👋</h1>
-              <p className="text-sm text-gray-500">Masuk untuk mulai melamar kerja dengan bantuan AI.</p>
+          {/* Card — slides in from right */}
+          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/70 border border-gray-100/80 p-8 space-y-5 animate-slide-right anim-d200">
+            <div className="space-y-1.5 animate-slide-up anim-d300">
+              <h1 className="font-extrabold text-gray-900 text-[1.6rem] tracking-tight leading-none">Selamat datang</h1>
+              <p className="text-sm text-gray-400">Masuk untuk mulai melamar kerja dengan bantuan AI.</p>
             </div>
 
-            {/* Google button */}
-            <button
-              onClick={() => signIn('google')}
-              className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3.5
-                         font-medium text-gray-700 shadow-sm transition-all hover:shadow-md hover:bg-gray-50 hover:border-gray-300 active:scale-[.98]"
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
-                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
-                <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
-                <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
-              </svg>
-              Lanjutkan dengan Google
-            </button>
+            {/* Google Sign-in button */}
+            <div className="animate-slide-up anim-d400">
+              <button
+                onClick={() => signIn('google')}
+                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3.5
+                           font-semibold text-gray-700 text-sm shadow-sm transition-all
+                           hover:shadow-md hover:border-gray-300 hover:bg-gray-50/80 active:scale-[.98]"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+                  <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+                  <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
+                  <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
+                  <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
+                </svg>
+                Lanjutkan dengan Google
+              </button>
+            </div>
 
-            {/* Trust */}
-            <div className="space-y-2">
+            {/* Trust signals */}
+            <div className="space-y-1.5 animate-slide-up anim-d500">
               {[
-                [<CheckCircle key="1" size={13} className="text-emerald-500 shrink-0" />, 'CV dan data kamu privat — hanya untuk akunmu'],
-                [<CheckCircle key="2" size={13} className="text-emerald-500 shrink-0" />, 'Gratis digunakan, tanpa kartu kredit'],
+                [<CheckCircle key="1" size={12} className="text-emerald-500 shrink-0" />, 'CV dan data kamu privat — hanya untuk akunmu'],
+                [<CheckCircle key="2" size={12} className="text-emerald-500 shrink-0" />, 'Gratis digunakan, tanpa kartu kredit'],
               ].map(([icon, text], i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-gray-400">{icon}{text}</div>
+                <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-400">{icon}{text}</div>
               ))}
             </div>
 
             {/* Divider */}
-            <div className="border-t border-gray-100" />
+            <div className="border-t border-gray-100 animate-fade-in anim-d600" />
 
-            {/* Gemini badge */}
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-transparent"
-                style={{ background: 'linear-gradient(#f8fafc,#f8fafc) padding-box, linear-gradient(135deg,#4285F4,#9B72CB,#D96570) border-box' }}>
-                <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" fill="none">
-                  <defs><linearGradient id="gem2" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#4285F4"/><stop offset="50%" stopColor="#9B72CB"/><stop offset="100%" stopColor="#D96570"/>
-                  </linearGradient></defs>
-                  <path d="M8 1C8 4.87 5.04 8 1 8c4.04 1 7 4.13 7 7 0-2.87 2.96-6 7-7C11 7 8 3.87 8 1z" fill="url(#gem2)"/>
-                </svg>
-                <span className="text-xs font-semibold"
-                  style={{ background: 'linear-gradient(135deg,#4285F4,#9B72CB,#D96570)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  Google Gemini
-                </span>
+            {/* Dual AI Engine badges */}
+            <div className="space-y-2 animate-slide-up anim-d700">
+              <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest">Powered by</p>
+              <div className="flex items-center gap-2">
+                {/* Gemini */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-transparent flex-1 justify-center transition-transform hover:scale-[1.02]"
+                  style={{ background: 'linear-gradient(#f8fafc,#f8fafc) padding-box, linear-gradient(135deg,#4285F4 0%,#9B72CB 50%,#D96570 100%) border-box' }}>
+                  <span className="animate-twinkle inline-flex"><GeminiMark id="card-gem" /></span>
+                  <span className="text-[11.5px] font-semibold"
+                    style={{ background: 'linear-gradient(135deg,#4285F4,#9B72CB,#D96570)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    Google Gemini
+                  </span>
+                </div>
+
+                {/* Plus */}
+                <span className="text-gray-300 text-sm font-light">+</span>
+
+                {/* Groq */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-orange-200/70 bg-orange-50/60 flex-1 justify-center animate-badge-glow transition-transform hover:scale-[1.02]">
+                  <span className="animate-groq-pulse inline-flex"><GroqMark /></span>
+                  <span className="text-[11.5px] font-semibold text-orange-600">Groq</span>
+                </div>
               </div>
-              <span className="text-xs text-gray-400">AI engine</span>
+              <p className="text-[10px] text-gray-300 leading-relaxed">Groq sebagai backup otomatis jika Gemini sibuk atau kuota habis.</p>
             </div>
           </div>
         </div>
@@ -651,6 +888,9 @@ function AppShell() {
               )}
               {activeTab === 'search' && (
                 <CariLokerTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onJobAdded={addJob} onGoToSettings={() => setActiveTab('settings')} onGoToProfile={() => setActiveTab('profile')} onGoToTracker={() => setActiveTab('tracker')} />
+              )}
+              {activeTab === 'compare' && (
+                <BestFitTab profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onJobAdded={addJob} onGoToSettings={() => setActiveTab('settings')} onGoToProfile={() => setActiveTab('profile')} />
               )}
               {activeTab === 'analyze' && (
                 <AnalyzeTab onJobAdded={addJob} onUpdateJob={updateJob} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
@@ -1760,6 +2000,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [generatedContent, setGeneratedContent] = useState('')
   const [genLoading, setGenLoading] = useState(false)
   const [lastUsage, setLastUsage] = useState<{ promptTokens: number; outputTokens: number; totalTokens: number; model: string } | null>(null)
+  const [lastProvider, setLastProvider] = useState<'gemini' | 'groq' | null>(null)
   const [pageCount, setPageCount] = useState(1)
   const [userRequest, setUserRequest] = useState('')
   const [atsScore, setAtsScore] = useState<number | null>(null)
@@ -1775,7 +2016,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   // Monotonic counter to discard stale rescore results when user regenerates quickly
   const rescoreGen = useRef(0)
   // PDF preview modal
-  const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; blob: Blob } | null>(null)
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; blob: Blob; text: string; kind: DocKind } | null>(null)
   const [pdfGenerating, setPdfGenerating] = useState(false)
   const [pendingGenType, setPendingGenType] = useState<DocType | null>(null)
 
@@ -1899,6 +2140,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
       if (!res.ok) { showError(data.error || 'Generation failed.'); return }
       setGeneratedContent(data.content)
       setLastUsage(data.usage ?? null)
+      setLastProvider(data.provider ?? null)
       upsert(type, data.content)
       if (type === 'cv') rescore(data.content)
       showToast(`${DOC_LABEL[type]} selesai dibuat!`, 'success')
@@ -1992,6 +2234,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
 
           {improve && !improving && (
             <div className="mt-3 space-y-3">
+              <ProviderBadge provider={improve._provider} />
               {!!improve.suggestions?.length && (
                 <ul className="space-y-1.5">
                   {improve.suggestions.map((s, i) => (
@@ -2044,6 +2287,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-xs font-medium text-gray-500">{DOC_TYPES.find(d => d.type === activeGen)?.label} Content</p>
+              <ProviderBadge provider={lastProvider} />
               {lastUsage && (
                 <span className="inline-flex items-center gap-1.5 text-[10px] bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5">
                   <span className="text-gray-400 font-medium">{lastUsage.model}</span>
@@ -2086,8 +2330,11 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                     try {
                       const fileName = exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile))
                       const blob = await getPdfBlob(generatedContent, activeGen!)
-                      const url = URL.createObjectURL(blob)
-                      setPdfPreview({ url, fileName: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`, blob })
+                      const pdfName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`
+                      // Use File (not bare Blob) so Chrome PDF viewer uses the correct filename
+                      // when its built-in save button is clicked.
+                      const url = URL.createObjectURL(new File([blob], pdfName, { type: 'application/pdf' }))
+                      setPdfPreview({ url, fileName: pdfName, blob, text: generatedContent, kind: activeGen! })
                     } catch (e: any) { showError(e?.message || 'Gagal membuat preview PDF. Coba lagi.') }
                     finally { setPdfGenerating(false) }
                   }}
@@ -2292,56 +2539,28 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 <button
+                  disabled={pdfGenerating}
                   onClick={async () => {
-                    const { blob, fileName } = pdfPreview
+                    setPdfGenerating(true)
+                    // Copy filename (without .pdf) to clipboard first so user can
+                    // Ctrl+V it into the print dialog's "File name" field.
+                    const suggestedName = pdfPreview.fileName.replace(/\.pdf$/i, '')
+                    try { await navigator.clipboard.writeText(suggestedName) } catch (_) {}
+                    showToast(`📋 Nama file disalin: "${suggestedName}" — Ctrl+V di kolom File name`)
                     try {
-                      // Convert blob to base64
-                      const base64 = await new Promise<string>((resolve, reject) => {
-                        const fr = new FileReader()
-                        fr.onload = () => {
-                          const r = fr.result as string
-                          resolve(r.includes(',') ? r.split(',')[1] : r)
-                        }
-                        fr.onerror = () => reject(fr.error)
-                        fr.readAsDataURL(blob)
-                      })
-                      // POST to server which returns proper Content-Disposition: attachment.
-                      // Submit via hidden iframe — browser processes the HTTP response
-                      // natively, bypassing corporate JavaScript download restrictions.
-                      const iframeName = `_pdfdl_${Date.now()}`
-                      const iframe = document.createElement('iframe')
-                      iframe.name = iframeName
-                      iframe.style.display = 'none'
-                      document.body.appendChild(iframe)
-
-                      const form = document.createElement('form')
-                      form.method = 'POST'
-                      form.action = '/api/pdf-export'
-                      form.target = iframeName
-
-                      const addField = (name: string, value: string) => {
-                        const inp = document.createElement('input')
-                        inp.type = 'hidden'
-                        inp.name = name
-                        inp.value = value
-                        form.appendChild(inp)
-                      }
-                      addField('data', base64)
-                      addField('filename', fileName)
-
-                      document.body.appendChild(form)
-                      form.submit()
-                      setTimeout(() => {
-                        document.body.removeChild(form)
-                        document.body.removeChild(iframe)
-                      }, 10000)
+                      await printPdf(pdfPreview.text, pdfPreview.kind)
                     } catch (e: any) {
-                      showError(`Gagal download PDF: ${e?.message || e}`)
+                      showError(e?.message || 'Gagal membuka print dialog.')
+                    } finally {
+                      setPdfGenerating(false)
                     }
                   }}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 px-4 py-2 rounded-lg transition-all shadow-sm"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-orange-400 hover:from-rose-600 hover:to-orange-500 px-4 py-2 rounded-lg transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  title="Buka print dialog → pilih Save as PDF / Microsoft Print to PDF"
                 >
-                  <Download size={13} /> Download PDF
+                  {pdfGenerating
+                    ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Memuat...</>
+                    : <><Download size={13} /> Simpan PDF</>}
                 </button>
                 <button
                   onClick={() => { URL.revokeObjectURL(pdfPreview.url); setPdfPreview(null) }}
@@ -2630,7 +2849,10 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
         {result && (
           <div className="card">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Analysis Result</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-gray-900">Analysis Result</h3>
+                <ProviderBadge provider={result._provider} />
+              </div>
               <span className={`text-2xl font-bold ${(result.score ?? 0) >= 75 ? 'text-green-600' : (result.score ?? 0) >= 60 ? 'text-yellow-600' : 'text-red-500'}`}>
                 {result.score ?? 0}%
               </span>
@@ -3580,8 +3802,8 @@ function WorldClockTab() {
   )
 }
 
-// ── CARI LOKER TAB (wrapper: keyword search + best-fit finder) ───────────────
-function CariLokerTab({ jobs, profile, configuredKeys, keysLoaded, onJobAdded, onGoToSettings, onGoToProfile, onGoToTracker }: {
+// ── CARI LOKER TAB ───────────────────────────────────────────────────────────
+function CariLokerTab(_: {
   jobs: JobApplication[]
   profile: string
   configuredKeys: ConfiguredKeys
@@ -3591,29 +3813,22 @@ function CariLokerTab({ jobs, profile, configuredKeys, keysLoaded, onJobAdded, o
   onGoToProfile: () => void
   onGoToTracker: () => void
 }) {
-  const [mode, setMode] = useState<'search' | 'bestfit'>('search')
   return (
-    <div className="space-y-4">
-      {/* Mode toggle */}
-      <div className="inline-flex bg-gray-100 rounded-xl p-1 gap-1">
-        <button onClick={() => setMode('search')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${mode === 'search' ? 'bg-white shadow text-primary' : 'text-gray-500 hover:text-gray-700'}`}>
-          <Search size={14} className="inline mr-1.5 -mt-0.5" /> Cari Loker
-        </button>
-        <button onClick={() => setMode('bestfit')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${mode === 'bestfit' ? 'bg-white shadow text-primary' : 'text-gray-500 hover:text-gray-700'}`}>
-          <Sparkles size={14} className="inline mr-1.5 -mt-0.5" /> Best Fit Finder
-        </button>
+    <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
+      <div className="relative mb-6">
+        <div className="w-20 h-20 rounded-2xl bg-amber-50 border-2 border-amber-200 border-dashed flex items-center justify-center mx-auto">
+          <span className="text-4xl">🚧</span>
+        </div>
+        <span className="absolute -top-1 -right-1 text-lg animate-bounce">⚙️</span>
       </div>
-
-      {mode === 'search' && (
-        <SearchTab onJobAdded={onJobAdded} jobs={jobs} profile={profile} configuredKeys={configuredKeys}
-          onGoToSettings={onGoToSettings} onGoToTracker={onGoToTracker} />
-      )}
-      {mode === 'bestfit' && (
-        <BestFitTab profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onJobAdded={onJobAdded}
-          onGoToSettings={onGoToSettings} onGoToProfile={onGoToProfile} />
-      )}
+      <h2 className="text-xl font-bold text-gray-800 mb-2">Sedang dalam Pengembangan</h2>
+      <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
+        Fitur Cari Loker sedang kami bangun agar lebih canggih dan akurat. Pantau terus ya!
+      </p>
+      <div className="mt-6 flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-4 py-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        Coming soon
+      </div>
     </div>
   )
 }
@@ -3637,7 +3852,7 @@ function BestFitTab({ profile, configuredKeys, keysLoaded, onJobAdded, onGoToSet
 }) {
   const [urls, setUrls] = useState<string[]>(['', ''])
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ rankings: FitRanking[]; total: number } | null>(null)
+  const [result, setResult] = useState<{ rankings: FitRanking[]; total: number; _provider?: 'gemini' | 'groq' } | null>(null)
   const [savingIdx, setSavingIdx] = useState<number | null>(null)
   const [savedIdxs, setSavedIdxs] = useState<Set<number>>(new Set())
 
@@ -3760,9 +3975,12 @@ function BestFitTab({ profile, configuredKeys, keysLoaded, onJobAdded, onGoToSet
       {/* Results */}
       {result && !loading && (
         <div className="space-y-4">
-          <p className="text-sm font-semibold text-gray-700">
-            {result.rankings.length} loker dibandingkan · diurutkan dari yang paling cocok
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-gray-700">
+              {result.rankings.length} loker dibandingkan · diurutkan dari yang paling cocok
+            </p>
+            <ProviderBadge provider={result._provider} />
+          </div>
 
           {result.rankings.map((r, i) => (
             <div key={i} className={`card overflow-hidden border-2 transition-all ${i === 0 ? 'border-primary/30 bg-purple-50/20' : 'border-gray-100'}`}>
@@ -3975,7 +4193,10 @@ function PrepResults({ data, role = '', company = '' }: { data: PrepResult; role
     <div className="space-y-4">
       {/* Research quick links */}
       <div className="card py-3 px-4">
-        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Riset manual · buka langsung di:</p>
+        <div className="flex items-center gap-2 mb-2">
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Riset manual · buka langsung di:</p>
+          <ProviderBadge provider={data._provider} />
+        </div>
         <div className="flex flex-wrap gap-2">
           {researchLinks.map(link => (
             <a key={link.label} href={link.url} target="_blank" rel="noopener noreferrer"

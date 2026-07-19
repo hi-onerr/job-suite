@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  getGenAIForRequest, MISSING_KEY_MESSAGE, generateText,
-  isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE,
+  getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider,
+  isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE,
+  isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE,
 } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
+import { getUserKey } from '../../lib/keys'
 
 type JobItem = { title: string; company: string; location: string; description: string; url: string }
 
@@ -95,6 +97,8 @@ export async function POST(req: NextRequest) {
   const genAI = await getGenAIForRequest(req)
   if (!genAI) return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
 
+  const groqKey = await getUserKey(userId, 'groq')
+
   // ── Fetch all job pages concurrently ────────────────────────────────────────
   const fetched = await Promise.all(validUrls.map(fetchJobData))
   const jobs: (JobItem & { originalUrl: string })[] = fetched
@@ -136,7 +140,7 @@ Respond ONLY with a valid JSON array (no markdown, no backticks), sorted by scor
 ]`
 
   try {
-    const text = await generateText(genAI, prompt)
+    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const rankings: any[] = JSON.parse(cleaned)
 
@@ -144,9 +148,11 @@ Respond ONLY with a valid JSON array (no markdown, no backticks), sorted by scor
       .map(r => ({ ...r, job: jobs[r.index - 1] }))
       .filter(r => r.job)
 
-    return NextResponse.json({ rankings: result, total: jobs.length })
+    return NextResponse.json({ rankings: result, total: jobs.length, _provider: provider })
   } catch (error: any) {
+    if (isAllProvidersFailedError(error)) return NextResponse.json({ error: ALL_PROVIDERS_MESSAGE }, { status: 429 })
     if (isOverloadError(error)) return NextResponse.json({ error: OVERLOAD_MESSAGE }, { status: 503 })
+    if (isRateLimitError(error)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 })
     if (isQuotaError(error)) return NextResponse.json({ error: QUOTA_MESSAGE }, { status: 429 })
     return NextResponse.json({ error: 'Gagal menganalisis posisi.', detail: error.message }, { status: 500 })
   }

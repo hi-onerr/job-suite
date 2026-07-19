@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateFromImage, isQuotaError, QUOTA_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateFromImage, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getUserId } from '../../lib/session'
 
 // Max decoded image size we'll accept (~6MB) to keep requests sane.
 const MAX_BYTES = 6 * 1024 * 1024
@@ -19,6 +20,9 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
 If the image is not a job posting, set every field to empty string.`
 
 export async function POST(req: NextRequest) {
+  const userId = await getUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { image, mimeType } = await req.json()
 
   if (!image || typeof image !== 'string') {
@@ -49,6 +53,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Extract-job error:', error)
     if (isOverloadError(error)) return NextResponse.json({ error: OVERLOAD_MESSAGE }, { status: 503 })
+    if (isRateLimitError(error)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 })
     if (isQuotaError(error)) return NextResponse.json({ error: QUOTA_MESSAGE }, { status: 429 })
     return NextResponse.json({ error: 'Gagal membaca gambar. Coba paste teksnya manual.', detail: error.message }, { status: 500 })
   }

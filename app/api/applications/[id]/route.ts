@@ -60,6 +60,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  await prisma.application.delete({ where: { id: params.id } })
-  return NextResponse.json({ ok: true })
+  try {
+    await prisma.application.delete({ where: { id: params.id } })
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    console.error('[DELETE /applications/:id] DB error:', e?.message ?? e)
+    return NextResponse.json({ error: e?.message ?? 'Internal server error' }, { status: 500 })
+  }
 }

@@ -556,6 +556,15 @@ function prepPdfContent(p: PrepExportData): any[] {
   return c
 }
 
+// Opens a print-friendly window for the document and triggers the print dialog.
+// The user selects "Save as PDF" / "Microsoft Print to PDF" to save.
+// This is the most reliable path in corporate browsers where all JS-triggered
+// downloads (a.download, showSaveFilePicker, Content-Disposition) are blocked.
+export async function printPdf(text: string, kind: DocKind = 'cv') {
+  const pdfMake = await loadPdfMake()
+  pdfMake.createPdf(buildDocDefinition(text, kind)).print()
+}
+
 export async function exportPrepPdf(prep: PrepExportData, fileName: string) {
   const pdfMake = await loadPdfMake()
   const docDefinition = {
