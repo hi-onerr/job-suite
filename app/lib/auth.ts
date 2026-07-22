@@ -3,20 +3,10 @@ import Google from 'next-auth/providers/google'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from './db'
 
-// Auth.js v5 config — Google social login backed by the Prisma adapter.
-// Required env: AUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET (see PHASE0-PLAN.md §6).
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  session: { strategy: 'database' },
+  session: { strategy: 'jwt' },
   trustHost: true,
-  debug: process.env.NODE_ENV === 'production',
-  logger: {
-    error(error: any) {
-      const inner = error?.cause?.err ?? error?.cause?.cause ?? error?.cause ?? error
-      console.error('[auth-detail]', inner?.message ?? inner?.toString?.() ?? 'unknown')
-      if (inner?.stack) console.error('[auth-stack]', inner.stack.slice(0, 1000))
-    },
-  },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
@@ -24,13 +14,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   pages: {
-    signIn: '/', // sign-in is handled inline on the home page
+    signIn: '/',
   },
   callbacks: {
-    // With the database strategy, expose the user id on the session so API
-    // routes can scope data to the current user.
-    session({ session, user }) {
-      if (session.user) session.user.id = user.id
+    jwt({ token, user }) {
+      if (user?.id) token.id = user.id
+      return token
+    },
+    session({ session, token }) {
+      if (session.user && token?.id) session.user.id = token.id as string
       return session
     },
   },
