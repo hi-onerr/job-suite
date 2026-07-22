@@ -12,9 +12,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   debug: process.env.NODE_ENV === 'production',
   logger: {
     error(error: any) {
-      const cause = error?.cause?.cause ?? error?.cause ?? error
-      console.error('[auth-detail]', cause?.message ?? cause?.toString?.() ?? JSON.stringify(error))
-      if (cause?.stack) console.error('[auth-stack]', cause.stack.slice(0, 800))
+      const inner = error?.cause?.err ?? error?.cause?.cause ?? error?.cause ?? error
+      console.error('[auth-detail]', inner?.message ?? inner?.toString?.() ?? 'unknown')
+      if (inner?.stack) console.error('[auth-stack]', inner.stack.slice(0, 1000))
     },
   },
   providers: [
