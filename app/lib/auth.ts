@@ -10,6 +10,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'database' },
   trustHost: true,
   debug: process.env.NODE_ENV === 'production',
+  logger: {
+    error(error: any) {
+      console.error('[auth-detail]', error?.cause?.message ?? error?.message ?? JSON.stringify(error))
+    },
+  },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
