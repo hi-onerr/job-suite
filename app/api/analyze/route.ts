@@ -57,7 +57,9 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         `What is the salary range for "${role || 'this role'}" at "${company || 'this company'}" in ${location} in 2024–2025? ` +
         `Search Glassdoor, LinkedIn Salary, Indeed, Levels.fyi, or local job boards for ${location}. ` +
         `Return the gross salary range in the local currency (${location === 'Indonesia' ? 'IDR' : location.match(/germany|netherlands|france|finland/i) ? 'EUR' : location.match(/canada/i) ? 'CAD' : location.match(/uk|united kingdom/i) ? 'GBP' : location.match(/usa|united states/i) ? 'USD' : 'local currency'}). ` +
-        `State both monthly AND annual figures if available. Format the range clearly e.g. "EUR 4,500 – 6,500 per month" or "EUR 54,000 – 78,000 per year". Cite the source URL.`,
+        (location === 'Indonesia'
+          ? `Express as gross monthly salary in IDR (per bulan). Format clearly: "IDR 15,000,000 – 25,000,000 per month". Cite the source URL.`
+          : `State both monthly AND annual figures if available. Format clearly e.g. "EUR 4,500 – 6,500 per month" or "EUR 54,000 – 78,000 per year". Cite the source URL.`),
         groqKey,
       ).catch(() => null),
     ])
@@ -139,8 +141,20 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
           const ctx = t.slice(ctxStart, (m.index ?? 0) + m[0].length + 40)
           let lo = normalise(clean(m[1])), hi = normalise(clean(m[2]))
           if (isAnnual(ctx)) {
-            const mLo = toMonthly(lo), mHi = toMonthly(hi)
-            if (mLo && mHi) { lo = mLo; hi = mHi }
+            // For IDR: numbers in 5M–150M range are almost certainly already monthly
+            const loN = parseFloat(lo.replace(/[,\s]/g, ''))
+            const hiN = parseFloat(hi.replace(/[,\s]/g, ''))
+            const skipConversion = cur === 'IDR' && loN >= 5_000_000 && hiN <= 150_000_000
+            if (!skipConversion) {
+              const mLo = toMonthly(lo), mHi = toMonthly(hi)
+              if (mLo && mHi) { lo = mLo; hi = mHi }
+            }
+          }
+          // Post-parse sanity: if IDR monthly < 3.5M (below Indonesian minimum wage), try next pattern
+          const loN = parseFloat(lo.replace(/[,\s]/g, ''))
+          if (cur === 'IDR' && loN > 0 && loN < 3_500_000) {
+            matched = false
+            continue
           }
           data.salaryRange = `${cur} ${lo} – ${hi} / bulan (gross, estimasi)`
           matched = true

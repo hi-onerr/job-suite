@@ -43,8 +43,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const VALID_PROVIDERS = new Set(['gemini', 'groq'])
   if (apiKeys && typeof apiKeys === 'object') {
     for (const [provider, value] of Object.entries(apiKeys as Record<string, string>)) {
+      if (!VALID_PROVIDERS.has(provider)) continue
       const trimmed = (value ?? '').trim()
       if (!trimmed) continue
       const { ciphertext, iv, authTag } = encrypt(trimmed)

@@ -192,6 +192,114 @@ function parseCoverLetter(text: string): CoverLetter | null {
   return cl
 }
 
+// ── HTML-based print (Arabic / RTL support) ──────────────────────────────────
+// pdfmake cannot do Arabic text shaping. For Arabic content we render to HTML
+// and open the browser's print dialog — the browser handles shaping correctly.
+function esc(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function richHtml(s: string): string {
+  return esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+}
+
+function buildHtmlDoc(text: string, kind: DocKind, isArabic: boolean, fileName?: string): string {
+  const dir = isArabic ? 'rtl' : 'ltr'
+  const fontFace = isArabic ? `
+    @font-face { font-family: 'NotoNaskhArabic'; src: url('/fonts/NotoNaskhArabic-Regular.ttf'); font-weight: 400; }
+    @font-face { font-family: 'NotoNaskhArabic'; src: url('/fonts/NotoNaskhArabic-Bold.ttf'); font-weight: 700; }` : ''
+  const font = isArabic ? "'NotoNaskhArabic', 'Arial', sans-serif" : "'Arial', sans-serif"
+
+  let body = ''
+
+  if (kind === 'cv') {
+    const cv = parseCv(text)
+    if (cv) {
+      if (cv.name) body += `<h1>${esc(cv.name)}</h1>`
+      if (cv.headline) body += `<p class="headline">${esc(cv.headline)}</p>`
+      if (cv.contact) body += `<p class="contact">${esc(cv.contact)}</p>`
+      for (const sec of cv.sections) {
+        body += `<div class="sec-title">${esc(sec.title)}</div>`
+        if (sec.kind === 'summary') {
+          for (const p of sec.paragraphs || []) body += `<p class="para">${richHtml(p)}</p>`
+        } else if (sec.kind === 'skills') {
+          body += '<table class="skills">'
+          for (const s of sec.skills || []) body += `<tr><td class="sk-cat">${esc(s.cat)}</td><td>${richHtml(s.desc)}</td></tr>`
+          body += '</table>'
+        } else if (sec.kind === 'certs') {
+          body += `<p class="para">${richHtml(sec.certs || '')}</p>`
+        } else {
+          for (const e of sec.entries || []) {
+            if (e.title) body += `<div class="entry-title">${richHtml(e.title)}</div>`
+            if (e.org || e.right) body += `<div class="entry-meta"><span>${esc(e.org)}</span><span class="entry-right">${esc(e.right)}</span></div>`
+            if (e.bullets.length) body += '<ul>' + e.bullets.map(b => `<li>${richHtml(b)}</li>`).join('') + '</ul>'
+          }
+        }
+      }
+    } else {
+      body = `<pre>${esc(text)}</pre>`
+    }
+  } else if (kind === 'coverletter') {
+    const cl = parseCoverLetter(text)
+    if (cl) {
+      if (cl.name) body += `<h1>${esc(cl.name)}</h1>`
+      if (cl.contact) body += `<p class="contact">${esc(cl.contact)}</p>`
+      body += '<hr style="border:1.5px solid #16407e;margin:10px 0 16px"/>'
+      if (cl.date) body += `<p class="para">${esc(cl.date)}</p>`
+      cl.recipient.forEach((r, i) => { body += `<p class="para" style="${i===0?'font-weight:bold':''}">${esc(r)}</p>` })
+      if (cl.subject) body += `<p class="para"><strong>${richHtml(cl.subject)}</strong></p>`
+      if (cl.greeting) body += `<p class="para">${esc(cl.greeting)}</p>`
+      for (const p of cl.body) body += `<p class="para">${richHtml(p)}</p>`
+      if (cl.closing) body += `<p class="para">${esc(cl.closing)}</p>`
+      cl.signature.forEach((s, i) => { body += `<p class="para" style="${i===0?'font-weight:bold;color:#16407e':''}">${esc(s)}</p>` })
+    } else {
+      body = `<pre>${esc(text)}</pre>`
+    }
+  } else {
+    body = text.replace(/\r/g, '').split('\n').map(l => l.trim() ? `<p class="para">${richHtml(l)}</p>` : '<br>').join('')
+  }
+
+  const title = fileName ? fileName.replace(/\.pdf$/i, '') : 'Document'
+  return `<!DOCTYPE html><html dir="${dir}" lang="${isArabic ? 'ar' : 'en'}"><head>
+<meta charset="UTF-8">
+<title>${esc(title)}</title>
+<style>
+${fontFace}
+@media print { @page { size: A4; margin: 2cm; } body { margin: 0; } }
+body { font-family: ${font}; font-size: 10pt; line-height: 1.5; color: #1a1a1a; margin: 2cm; direction: ${dir}; }
+h1 { font-size: 20pt; margin: 0 0 4px; font-weight: bold; }
+.headline { color: #444; margin: 0 0 2px; }
+.contact { color: #666; font-size: 9pt; margin: 0 0 14px; }
+.sec-title { color: #0b3d91; font-weight: bold; font-size: 10pt; text-transform: uppercase; border-bottom: 1px solid #b9c4d4; margin: 12px 0 6px; padding-bottom: 3px; }
+.entry-title { color: #16407e; font-weight: bold; margin: 8px 0 2px; }
+.entry-meta { display: flex; justify-content: space-between; color: #555; font-style: italic; font-size: 9pt; margin-bottom: 3px; }
+.entry-right { text-align: ${isArabic ? 'left' : 'right'}; }
+ul { margin: 3px 0; padding-inline-start: 20px; }
+li { margin-bottom: 2px; }
+.para { margin: 3px 0 5px; }
+.skills { width: 100%; border-collapse: collapse; }
+.sk-cat { font-weight: bold; padding: 1px 10px 1px 0; width: 30%; vertical-align: top; }
+pre { white-space: pre-wrap; font-family: inherit; }
+</style></head><body>${body}</body></html>`
+}
+
+export function printHtmlDoc(text: string, kind: DocKind = 'cv', fileName?: string): 'popup_blocked' | void {
+  const isArabic = hasArabicScript(text)
+  const title = fileName ? fileName.replace(/\.pdf$/i, '') : 'Document'
+  const html = buildHtmlDoc(text, kind, isArabic, fileName)
+  const win = window.open('', '_blank', 'width=900,height=750')
+  if (!win) return 'popup_blocked'
+  win.document.write(html)
+  win.document.close()
+  // Force title after document.close() — browsers use this for the "Save as PDF" filename
+  try { win.document.title = title } catch (_) {}
+  win.focus()
+  setTimeout(() => {
+    try { win.document.title = title } catch (_) {} // set again right before print
+    win.print()
+  }, 900)
+}
+
 // ── PDF (pdfmake — direct download) ───────────────────────────────────────────
 const CONTENT_W = 515 // A4 width (595.28) minus 40pt margins each side
 
@@ -299,6 +407,10 @@ function genericPdfContent(text: string): any[] {
   return c
 }
 
+// Detect Arabic script (U+0600–U+06FF main block)
+export const hasArabicScript = (text: string) => /[؀-ۿ]/.test(text)
+
+
 async function loadPdfMake() {
   // @ts-ignore — pdfmake build paths ship without bundled type declarations
   const pdfMakeMod = await import('pdfmake/build/pdfmake')
@@ -317,6 +429,16 @@ async function loadPdfMake() {
       Helvetica: { normal: 'Helvetica', bold: 'Helvetica-Bold', italics: 'Helvetica-Oblique', bolditalics: 'Helvetica-BoldOblique' },
     }
   }
+
+  // Arabic documents use printHtmlDoc (browser-based) — pdfmake only handles Latin content
+  pdfMake.fonts = {
+    ...(pdfMake.fonts || {}),
+    Roboto: {
+      normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf',
+      italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf',
+    },
+  }
+
   return pdfMake
 }
 

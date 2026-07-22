@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getUserId } from '../../lib/session'
 
 // Sites that require login AND return no useful content even from the HTML shell.
 // Kept minimal — only hard-block when we're 100% sure nothing is parseable.
@@ -122,8 +123,17 @@ function isNextJsSpa(html: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const userId = await getUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { url } = await req.json()
-  if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
+  if (!url || typeof url !== 'string') return NextResponse.json({ error: 'URL required' }, { status: 400 })
+
+  // Validate URL scheme — only allow https to prevent SSRF via file://, ftp://, etc.
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') return NextResponse.json({ error: 'Only HTTPS URLs are supported' }, { status: 400 })
+  } catch { return NextResponse.json({ error: 'Invalid URL' }, { status: 400 }) }
 
   // ── 0. Early-exit for known blocked domains ───────────────────────────────
   try {
@@ -147,7 +157,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // ── 1. Fetch the regular HTML ─────────────────────────────────────────────
-    const htmlRes = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(12000) })
+    const htmlRes = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(12000), redirect: 'error' })
     if (!htmlRes.ok) throw new Error(`HTTP ${htmlRes.status}`)
     const html = await htmlRes.text()
 
@@ -164,6 +174,7 @@ export async function POST(req: NextRequest) {
           'Next-Url': new URL(url).pathname,
         },
         signal: AbortSignal.timeout(12000),
+        redirect: 'error',
       }).catch(() => null)
 
       if (rscRes?.ok) {

@@ -11,7 +11,7 @@ import {
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
   RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X, Scale,
 } from 'lucide-react'
-import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, printPdf, exportPrepPdf, exportPrepDocx, type PrepExportData, type DocKind } from './lib/export'
+import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, printPdf, printHtmlDoc, hasArabicScript, exportPrepPdf, exportPrepDocx, type PrepExportData, type DocKind } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
 
 // ── PROVIDER BADGE ────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ interface JobApplication {
   location: string
   url: string
   jobDesc: string
-  status: 'saved' | 'applied' | 'interview' | 'offer' | 'rejected'
+  status: 'saved' | 'applied' | 'interview' | 'offer' | 'rejected' | 'draft'
   matchScore: number
   analysis?: AnalysisResult | null
   appliedDate?: string
@@ -180,6 +180,7 @@ const TABS: Tab[] = [
 ]
 
 const STATUS_CONFIG = {
+  draft: { label: 'Draft', color: 'badge-orange', icon: <Pencil size={12} /> },
   saved: { label: 'Saved', color: 'badge-gray', icon: <Clock size={12} /> },
   applied: { label: 'Applied', color: 'badge-blue', icon: <CheckCircle size={12} /> },
   interview: { label: 'Interview', color: 'badge-yellow', icon: <Star size={12} /> },
@@ -1072,8 +1073,8 @@ function DashboardInsights({ jobs }: { jobs: JobApplication[] }) {
 
 // ── CALENDAR VIEW ────────────────────────────────────────────────────────────
 const STATUS_DOT: Record<string, string> = {
-  saved: 'bg-gray-400', applied: 'bg-blue-500', interview: 'bg-amber-500',
-  offer: 'bg-green-500', rejected: 'bg-red-400',
+  draft: 'bg-orange-400', saved: 'bg-gray-400', applied: 'bg-blue-500', interview: 'bg-amber-500',
+  offer: 'bg-green-500', rejected: 'bg-red-600',
 }
 const MONTH_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
 const DAY_ID = ['Sen','Sel','Rab','Kam','Jum','Sab','Min']
@@ -1358,7 +1359,7 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
 
         {/* Status filter */}
         <div className="flex gap-1 mb-3 flex-wrap">
-          {['all', 'saved', 'applied', 'interview', 'offer', 'rejected'].map(s => (
+          {['all', 'draft', 'saved', 'applied', 'interview', 'offer', 'rejected'].map(s => (
             <button
               key={s}
               onClick={() => setFilter(s)}
@@ -1522,11 +1523,12 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
 
 // ── KANBAN BOARD ─────────────────────────────────────────────────────────────
 const KANBAN_COLUMNS: { status: JobApplication['status']; label: string; accent: string }[] = [
+  { status: 'draft', label: 'Draft', accent: 'border-t-orange-400' },
   { status: 'saved', label: 'Saved', accent: 'border-t-gray-300' },
   { status: 'applied', label: 'Applied', accent: 'border-t-blue-400' },
   { status: 'interview', label: 'Interview', accent: 'border-t-amber-400' },
   { status: 'offer', label: 'Offer', accent: 'border-t-green-400' },
-  { status: 'rejected', label: 'Rejected', accent: 'border-t-red-400' },
+  { status: 'rejected', label: 'Rejected', accent: 'border-t-red-600' },
 ]
 
 function KanbanBoard({ jobs, onUpdate, onOpen }: {
@@ -1546,7 +1548,7 @@ function KanbanBoard({ jobs, onUpdate, onOpen }: {
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
       {KANBAN_COLUMNS.map(col => {
         const items = jobs.filter(j => j.status === col.status)
         return (
@@ -1627,6 +1629,34 @@ function JobDetail({ job, onUpdate, onDelete, profile }: {
   onDelete: (id: string) => void
   profile: string
 }) {
+  const [retrying, setRetrying] = useState(false)
+  const [retryMsg, setRetryMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const retryAnalyze = async () => {
+    if (!job.jobDesc) return
+    setRetrying(true)
+    setRetryMsg(null)
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobDesc: job.jobDesc, profile, company: job.company, role: job.role }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setRetryMsg({ text: data.error || 'Analisis gagal. Coba lagi nanti.', ok: false }); return }
+      onUpdate(job.id, {
+        status: 'saved',
+        matchScore: data.score || 0,
+        analysis: { strengths: data.strengths, gaps: data.gaps, recommendation: data.recommendation, salaryRange: data.salaryRange, keywordsToAdd: data.keywordsToAdd, _provider: data._provider },
+      })
+      showToast(`Analisis selesai — skor ${data.score ?? 0}%`, 'success')
+    } catch {
+      setRetryMsg({ text: 'Koneksi gagal. Coba lagi.', ok: false })
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
     <div className="card space-y-4">
@@ -1646,14 +1676,50 @@ function JobDetail({ job, onUpdate, onDelete, profile }: {
         </button>
       </div>
 
+      {/* Draft banner — retry analyze */}
+      {job.status === 'draft' && (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-center gap-3">
+          <Pencil size={14} className="text-orange-500 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-orange-800">Belum dianalisis</p>
+            <p className="text-xs text-orange-600">Job disimpan sebagai draft. Analisis sekarang untuk melihat skor & rekomendasi.</p>
+            {retryMsg && (
+              <p className={`text-xs mt-1 font-medium ${retryMsg.ok ? 'text-green-700' : 'text-red-600'}`}>{retryMsg.text}</p>
+            )}
+          </div>
+          <button
+            onClick={retryAnalyze}
+            disabled={retrying}
+            className="btn-primary text-xs flex items-center gap-1.5 shrink-0"
+          >
+            <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} />
+            {retrying ? 'Analyzing...' : 'Analyze'}
+          </button>
+        </div>
+      )}
+
       {/* Match Score */}
       {job.matchScore > 0 && (
         <div className="bg-gray-50 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-gray-700">ATS Match Score</span>
-            <span className={`font-bold text-lg ${job.matchScore >= 75 ? 'text-green-600' : job.matchScore >= 60 ? 'text-yellow-600' : 'text-red-500'}`}>
-              {job.matchScore}%
-            </span>
+            <div className="flex items-center gap-2">
+              <ProviderBadge provider={job.analysis?._provider} />
+              {job.status === 'saved' && (
+                <button
+                  onClick={retryAnalyze}
+                  disabled={retrying}
+                  className="btn-primary text-xs flex items-center gap-1.5"
+                  title="Analisis ulang dengan profil terbaru"
+                >
+                  <RefreshCw size={11} className={retrying ? 'animate-spin' : ''} />
+                  {retrying ? 'Analyzing...' : 'Re-analyze'}
+                </button>
+              )}
+              <span className={`font-bold text-lg ${job.matchScore >= 75 ? 'text-green-600' : job.matchScore >= 60 ? 'text-yellow-600' : 'text-red-500'}`}>
+                {job.matchScore}%
+              </span>
+            </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
@@ -1661,6 +1727,9 @@ function JobDetail({ job, onUpdate, onDelete, profile }: {
               style={{ width: `${job.matchScore}%` }}
             />
           </div>
+          {retryMsg && (
+            <p className={`text-xs mt-2 font-medium ${retryMsg.ok ? 'text-green-700' : 'text-red-600'}`}>{retryMsg.text}</p>
+          )}
         </div>
       )}
 
@@ -2326,9 +2395,16 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                 <button
                   disabled={pdfGenerating}
                   onClick={async () => {
+                    const fileName = exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile))
+                    // Arabic text needs browser print (pdfmake can't do Arabic shaping)
+                    if (hasArabicScript(generatedContent)) {
+                      const result = printHtmlDoc(generatedContent, activeGen!, fileName)
+                      if (result === 'popup_blocked') showError('Pop-up diblokir browser. Aktifkan pop-up lalu coba lagi.')
+                      else showToast('Print dialog terbuka — pilih "Save as PDF"', 'info')
+                      return
+                    }
                     setPdfGenerating(true)
                     try {
-                      const fileName = exportFileName(activeGen!, company, guessCandidateName(generatedContent, profile))
                       const blob = await getPdfBlob(generatedContent, activeGen!)
                       const pdfName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`
                       // Use File (not bare Blob) so Chrome PDF viewer uses the correct filename
@@ -2606,7 +2682,9 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
       company: company || 'Unknown Company',
       role: role || 'Unknown Role',
       location: location || 'Unknown',
-      url, jobDesc, status: 'saved', matchScore, analysis,
+      url, jobDesc,
+      status: analysis ? 'saved' : 'draft',
+      matchScore, analysis,
     }
     if (savedJobId) {
       onUpdateJob(savedJobId, payload)
@@ -2689,6 +2767,11 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
       const data = await res.json()
       if (!res.ok) {
         showError(data.error || 'Analysis failed.')
+        // Auto-save job data as draft so user doesn't lose it
+        if (!savedJobId) {
+          persist(0, null).catch(() => {})
+          showToast('Job disimpan sebagai Draft — retry analyze dari Job Tracker kapan saja.', 'info')
+        }
         return
       }
       setResult(data)
@@ -2700,6 +2783,10 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
       }).catch(() => { /* non-critical */ })
     } catch (e) {
       showError('Analysis failed. Periksa koneksi atau API key.')
+      if (!savedJobId) {
+        persist(0, null).catch(() => {})
+        showToast('Job disimpan sebagai Draft — retry analyze dari Job Tracker kapan saja.', 'info')
+      }
     } finally {
       setLoading(false)
     }
