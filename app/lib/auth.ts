@@ -8,6 +8,8 @@ import { prisma } from './db'
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: 'database' },
+  trustHost: true,
+  debug: process.env.NODE_ENV === 'production',
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
