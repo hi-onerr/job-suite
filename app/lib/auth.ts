@@ -12,7 +12,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   debug: process.env.NODE_ENV === 'production',
   logger: {
     error(error: any) {
-      console.error('[auth-detail]', error?.cause?.message ?? error?.message ?? JSON.stringify(error))
+      const cause = error?.cause?.cause ?? error?.cause ?? error
+      console.error('[auth-detail]', cause?.message ?? cause?.toString?.() ?? JSON.stringify(error))
+      if (cause?.stack) console.error('[auth-stack]', cause.stack.slice(0, 800))
     },
   },
   providers: [
