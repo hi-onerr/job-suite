@@ -22,7 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
         const user = await prisma.user.findUnique({
-          where: { email: String(credentials.email) },
+          where: { email: String(credentials.email).trim().toLowerCase() },
           select: { id: true, name: true, email: true, image: true, password: true },
         })
         if (!user?.password) return null
