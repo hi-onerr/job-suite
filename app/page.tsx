@@ -321,6 +321,45 @@ function SignInScreen() {
     { icon: <Brain size={13} />, label: 'Interview dipersiapkan', count: counts[2] },
   ], [counts])
 
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [formEmail, setFormEmail] = useState('')
+  const [formPassword, setFormPassword] = useState('')
+  const [formName, setFormName] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+
+  const handleCredentialsLogin = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthError('')
+    setAuthLoading(true)
+    try {
+      const res = await signIn('credentials', { email: formEmail, password: formPassword, redirect: false })
+      if (res?.error) setAuthError('Email atau password salah')
+    } catch {
+      setAuthError('Email atau password salah')
+    }
+    setAuthLoading(false)
+  }, [formEmail, formPassword])
+
+  const handleRegister = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthError('')
+    setAuthLoading(true)
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: formName, email: formEmail, password: formPassword }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setAuthLoading(false); setAuthError(data.error); return }
+    try {
+      await signIn('credentials', { email: formEmail, password: formPassword, redirect: false })
+    } catch {
+      setAuthError('Akun dibuat. Silakan masuk.')
+    }
+    setAuthLoading(false)
+  }, [formName, formEmail, formPassword])
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[1fr_460px]">
       {/* ── Left: hero ── */}
@@ -494,17 +533,21 @@ function SignInScreen() {
           </div>
 
           {/* Card — slides in from right */}
-          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/70 border border-gray-100/80 p-8 space-y-5 animate-slide-right anim-d200">
+          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/70 border border-gray-100/80 p-8 space-y-4 animate-slide-right anim-d200">
             <div className="space-y-1.5 animate-slide-up anim-d300">
-              <h1 className="font-extrabold text-gray-900 text-[1.6rem] tracking-tight leading-none">Selamat datang</h1>
-              <p className="text-sm text-gray-400">Masuk untuk mulai melamar kerja dengan bantuan AI.</p>
+              <h1 className="font-extrabold text-gray-900 text-[1.6rem] tracking-tight leading-none">
+                {authMode === 'login' ? 'Selamat datang' : 'Buat akun'}
+              </h1>
+              <p className="text-sm text-gray-400">
+                {authMode === 'login' ? 'Masuk untuk mulai melamar kerja dengan bantuan AI.' : 'Daftar gratis, mulai melamar lebih cerdas.'}
+              </p>
             </div>
 
             {/* Google Sign-in button */}
             <div className="animate-slide-up anim-d400">
               <button
                 onClick={() => signIn('google')}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3.5
+                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3
                            font-semibold text-gray-700 text-sm shadow-sm transition-all
                            hover:shadow-md hover:border-gray-300 hover:bg-gray-50/80 active:scale-[.98]"
               >
@@ -518,8 +561,69 @@ function SignInScreen() {
               </button>
             </div>
 
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 border-t border-gray-100" />
+              <span className="text-[11px] text-gray-300 font-medium">atau</span>
+              <div className="flex-1 border-t border-gray-100" />
+            </div>
+
+            {/* Email/Password form */}
+            <form onSubmit={authMode === 'login' ? handleCredentialsLogin : handleRegister} className="space-y-2.5">
+              {authMode === 'register' && (
+                <input
+                  type="text"
+                  placeholder="Nama (opsional)"
+                  value={formName}
+                  onChange={e => setFormName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
+                />
+              )}
+              <input
+                type="email"
+                placeholder="Email"
+                value={formEmail}
+                onChange={e => setFormEmail(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
+              />
+              <input
+                type="password"
+                placeholder="Password (min. 8 karakter)"
+                value={formPassword}
+                onChange={e => setFormPassword(e.target.value)}
+                required
+                minLength={8}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
+              />
+              {authError && <p className="text-xs text-red-500">{authError}</p>}
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold transition-all hover:bg-gray-800 active:scale-[.98] disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {authLoading ? 'Memproses...' : authMode === 'login' ? 'Masuk' : 'Daftar'}
+              </button>
+            </form>
+
+            <p className="text-xs text-center text-gray-400">
+              {authMode === 'login' ? (
+                <>Belum punya akun?{' '}
+                  <button onClick={() => { setAuthMode('register'); setAuthError('') }} className="text-sky-500 font-semibold hover:text-sky-600">
+                    Daftar
+                  </button>
+                </>
+              ) : (
+                <>Sudah punya akun?{' '}
+                  <button onClick={() => { setAuthMode('login'); setAuthError('') }} className="text-sky-500 font-semibold hover:text-sky-600">
+                    Masuk
+                  </button>
+                </>
+              )}
+            </p>
+
             {/* Trust signals */}
-            <div className="space-y-1.5 animate-slide-up anim-d500">
+            <div className="space-y-1.5">
               {[
                 [<CheckCircle key="1" size={12} className="text-emerald-500 shrink-0" />, 'CV dan data kamu privat — hanya untuk akunmu'],
                 [<CheckCircle key="2" size={12} className="text-emerald-500 shrink-0" />, 'Gratis digunakan, tanpa kartu kredit'],
@@ -529,13 +633,12 @@ function SignInScreen() {
             </div>
 
             {/* Divider */}
-            <div className="border-t border-gray-100 animate-fade-in anim-d600" />
+            <div className="border-t border-gray-100" />
 
             {/* Dual AI Engine badges */}
-            <div className="space-y-2 animate-slide-up anim-d700">
+            <div className="space-y-2">
               <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest">Powered by</p>
               <div className="flex items-center gap-2">
-                {/* Gemini */}
                 <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-transparent flex-1 justify-center transition-transform hover:scale-[1.02]"
                   style={{ background: 'linear-gradient(#f8fafc,#f8fafc) padding-box, linear-gradient(135deg,#4285F4 0%,#9B72CB 50%,#D96570 100%) border-box' }}>
                   <span className="animate-twinkle inline-flex"><GeminiMark id="card-gem" /></span>
@@ -544,11 +647,7 @@ function SignInScreen() {
                     Google Gemini
                   </span>
                 </div>
-
-                {/* Plus */}
                 <span className="text-gray-300 text-sm font-light">+</span>
-
-                {/* Groq */}
                 <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-orange-200/70 bg-orange-50/60 flex-1 justify-center animate-badge-glow transition-transform hover:scale-[1.02]">
                   <span className="animate-groq-pulse inline-flex"><GroqMark /></span>
                   <span className="text-[11.5px] font-semibold text-orange-600">Groq</span>
