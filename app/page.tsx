@@ -326,6 +326,7 @@ function SignInScreen() {
   const [formPassword, setFormPassword] = useState('')
   const [formName, setFormName] = useState('')
   const [authError, setAuthError] = useState('')
+  const [authSuccess, setAuthSuccess] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
 
   const handleCredentialsLogin = useCallback(async (e: React.FormEvent) => {
@@ -344,6 +345,7 @@ function SignInScreen() {
   const handleRegister = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setAuthError('')
+    setAuthSuccess('')
     setAuthLoading(true)
     const res = await fetch('/api/auth/register', {
       method: 'POST',
@@ -351,13 +353,12 @@ function SignInScreen() {
       body: JSON.stringify({ name: formName, email: formEmail, password: formPassword }),
     })
     const data = await res.json()
-    if (!res.ok) { setAuthLoading(false); setAuthError(data.error); return }
-    try {
-      await signIn('credentials', { email: formEmail, password: formPassword, redirect: false })
-    } catch {
-      setAuthError('Akun dibuat. Silakan masuk.')
-    }
     setAuthLoading(false)
+    if (!res.ok) { setAuthError(data.error); return }
+    setFormPassword('')
+    setFormName('')
+    setAuthMode('login')
+    setAuthSuccess('Akun berhasil dibuat! Silakan masuk.')
   }, [formName, formEmail, formPassword])
 
   return (
@@ -596,6 +597,7 @@ function SignInScreen() {
                 minLength={8}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
               />
+              {authSuccess && <p className="text-xs text-emerald-600 font-medium">{authSuccess}</p>}
               {authError && <p className="text-xs text-red-500">{authError}</p>}
               <button
                 type="submit"
@@ -609,13 +611,13 @@ function SignInScreen() {
             <p className="text-xs text-center text-gray-400">
               {authMode === 'login' ? (
                 <>Belum punya akun?{' '}
-                  <button onClick={() => { setAuthMode('register'); setAuthError('') }} className="text-sky-500 font-semibold hover:text-sky-600">
+                  <button onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess('') }} className="text-sky-500 font-semibold hover:text-sky-600">
                     Daftar
                   </button>
                 </>
               ) : (
                 <>Sudah punya akun?{' '}
-                  <button onClick={() => { setAuthMode('login'); setAuthError('') }} className="text-sky-500 font-semibold hover:text-sky-600">
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess('') }} className="text-sky-500 font-semibold hover:text-sky-600">
                     Masuk
                   </button>
                 </>
