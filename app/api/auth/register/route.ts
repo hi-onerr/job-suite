@@ -5,11 +5,15 @@ import { prisma } from '@/app/lib/db'
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export async function POST(req: Request) {
-  const body = await req.json()
+  let body: unknown
+  try { body = await req.json() } catch {
+    return NextResponse.json({ error: 'Request tidak valid' }, { status: 400 })
+  }
 
-  const email = String(body.email ?? '').trim().toLowerCase().slice(0, 254)
-  const password = String(body.password ?? '').slice(0, 128)
-  const name = String(body.name ?? '').trim().slice(0, 100) || null
+  const b = body as Record<string, unknown>
+  const email = String(b.email ?? '').trim().toLowerCase().slice(0, 254)
+  const password = String(b.password ?? '').slice(0, 128)
+  const name = String(b.name ?? '').trim().slice(0, 100) || null
 
   if (!email || !password) {
     return NextResponse.json({ error: 'Email dan password wajib diisi' }, { status: 400 })
