@@ -24,11 +24,12 @@ model User {
   aiModelPref   String?  @default("auto") // "auto" | "gemini" | "groq"
   twoFactorSecret   String?
   twoFactorEnabled  Boolean  @default(false)
-  accounts      Account[]
-  sessions      Session[]
-  apiKeys       ApiKey[]
-  applications  Application[]
-  createdAt     DateTime      @default(now())
+  accounts        Account[]
+  sessions        Session[]
+  apiKeys         ApiKey[]
+  applications    Application[]
+  passwordResets  PasswordReset[]
+  createdAt       DateTime      @default(now())
 }
 
 model ApiKey {
@@ -112,4 +113,13 @@ model RateLimit {
 model UsedOtp {
   id        String   @id  // "{userId}:{code}:{windowTs}"
   createdAt DateTime @default(now())
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

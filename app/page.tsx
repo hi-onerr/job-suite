@@ -380,7 +380,7 @@ function SignInScreen() {
     { icon: <Brain size={13} />, label: 'Interview dipersiapkan', count: counts[2] },
   ], [counts])
 
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login')
   const [formEmail, setFormEmail] = useState('')
   const [formPassword, setFormPassword] = useState('')
   const [formConfirmPassword, setFormConfirmPassword] = useState('')
@@ -413,6 +413,25 @@ function SignInScreen() {
     }
     setAuthLoading(false)
   }, [formEmail, formPassword, needsMfa, formTotp])
+
+  const handleForgotPassword = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthError('')
+    setAuthSuccess('')
+    setAuthLoading(true)
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: formEmail }),
+    })
+    setAuthLoading(false)
+    if (res.ok) {
+      setAuthSuccess('Jika email terdaftar, link reset password sudah dikirim. Cek inbox kamu.')
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setAuthError((data as any).error ?? 'Terjadi kesalahan, coba lagi')
+    }
+  }, [formEmail])
 
   const handleRegister = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -600,35 +619,41 @@ function SignInScreen() {
 
             <div className="space-y-1 pb-1">
               <h1 className="font-extrabold text-gray-900 text-[1.5rem] tracking-tight leading-none">
-                {authMode === 'login' ? 'Selamat datang' : 'Buat akun'}
+                {authMode === 'login' ? 'Selamat datang' : authMode === 'register' ? 'Buat akun' : 'Lupa password?'}
               </h1>
               <p className="text-[13px] text-gray-400 leading-snug">
-                {authMode === 'login' ? 'Masuk untuk mulai melamar lebih cerdas.' : 'Daftar gratis, mulai melamar lebih cerdas.'}
+                {authMode === 'login' ? 'Masuk untuk mulai melamar lebih cerdas.'
+                  : authMode === 'register' ? 'Daftar gratis, mulai melamar lebih cerdas.'
+                  : 'Masukkan emailmu dan kami kirim link reset.'}
               </p>
             </div>
 
-            {/* Google */}
-            <button onClick={() => signIn('google')}
-              className="w-full flex items-center justify-center gap-2.5 bg-white rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all active:scale-[.98]"
-              style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.1)')}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)')}>
-              <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden>
-                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
-                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
-                <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
-                <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
-              </svg>
-              Lanjutkan dengan Google
-            </button>
+            {/* Google — hidden on forgot-password mode */}
+            {authMode !== 'forgot' && (
+              <>
+                <button onClick={() => signIn('google')}
+                  className="w-full flex items-center justify-center gap-2.5 bg-white rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all active:scale-[.98]"
+                  style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                  onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.1)')}
+                  onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)')}>
+                  <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden>
+                    <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+                    <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
+                    <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
+                    <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
+                  </svg>
+                  Lanjutkan dengan Google
+                </button>
 
-            <div className="flex items-center gap-3">
-              <div className="flex-1 border-t border-gray-100" />
-              <span className="text-[11px] text-gray-300 font-medium">atau</span>
-              <div className="flex-1 border-t border-gray-100" />
-            </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 border-t border-gray-100" />
+                  <span className="text-[11px] text-gray-300 font-medium">atau</span>
+                  <div className="flex-1 border-t border-gray-100" />
+                </div>
+              </>
+            )}
 
-            <form onSubmit={authMode === 'login' ? handleCredentialsLogin : handleRegister} className="space-y-2">
+            <form onSubmit={authMode === 'login' ? handleCredentialsLogin : authMode === 'register' ? handleRegister : handleForgotPassword} className="space-y-2">
               {needsMfa ? (
                 <>
                   <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-700 px-3 py-2 rounded-xl border border-amber-100">
@@ -641,6 +666,14 @@ function SignInScreen() {
                     style={{ border: '1.5px solid #fcd34d', background: '#fffbeb' }} />
                   <button type="button" onClick={() => { setNeedsMfa(false); setFormTotp(''); setAuthError('') }}
                     className="text-xs text-gray-400 hover:text-gray-600 w-full text-center transition-colors">← Kembali</button>
+                </>
+              ) : authMode === 'forgot' ? (
+                <>
+                  <input type="email" placeholder="Email yang terdaftar" value={formEmail} onChange={e => setFormEmail(e.target.value)} required autoFocus
+                    className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
+                    style={{ border: '1.5px solid #e2e8f0' }}
+                    onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
+                    onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
                 </>
               ) : (
                 <>
@@ -668,6 +701,15 @@ function SignInScreen() {
                       onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
                       onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
                   )}
+                  {authMode === 'login' && !needsMfa && (
+                    <div className="flex justify-end">
+                      <button type="button"
+                        onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthSuccess('') }}
+                        className="text-xs text-indigo-500 hover:text-indigo-600 transition-colors font-medium">
+                        Lupa password?
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
               {authSuccess && <p className="text-xs text-emerald-600 font-medium">{authSuccess}</p>}
@@ -675,7 +717,7 @@ function SignInScreen() {
               <button type="submit" disabled={authLoading || (needsMfa && formTotp.length < 6)}
                 className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[.98] disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: 'linear-gradient(135deg,#6366f1,#7c3aed)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
-                {authLoading ? 'Memproses...' : needsMfa ? 'Verifikasi' : authMode === 'login' ? 'Masuk' : 'Daftar'}
+                {authLoading ? 'Memproses...' : needsMfa ? 'Verifikasi' : authMode === 'login' ? 'Masuk' : authMode === 'register' ? 'Daftar' : 'Kirim link reset'}
               </button>
             </form>
 
@@ -685,11 +727,14 @@ function SignInScreen() {
                   <button onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess(''); setFormConfirmPassword('') }}
                     className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">Daftar</button>
                 </>
-              ) : (
+              ) : authMode === 'register' ? (
                 <>Sudah punya akun?{' '}
                   <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); setFormConfirmPassword('') }}
                     className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">Masuk</button>
                 </>
+              ) : (
+                <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess('') }}
+                  className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">← Kembali ke masuk</button>
               )}
             </p>
 
