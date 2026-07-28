@@ -19,7 +19,7 @@ function createTransporter() {
 export async function POST(req: Request) {
   try {
     const ip = req.headers.get('x-forwarded-for') ?? 'unknown'
-    const { allowed } = await checkRateLimit(`forgot-password:${ip}`, 3, 15 * 60 * 1000)
+    const { allowed } = await checkRateLimit(`forgot-password:${ip}`, 5, 60 * 60 * 1000)
     if (!allowed) {
       return NextResponse.json({ error: 'Terlalu banyak percobaan, coba lagi nanti' }, { status: 429 })
     }
