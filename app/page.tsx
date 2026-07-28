@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from 'react'
 import { useSession, signIn, signOut } from 'next-auth/react'
 import {
   Briefcase, FileText, Mail, Brain, BarChart2,
@@ -9,10 +9,14 @@ import {
   AlertCircle, Upload, User, Settings, Key, LogOut,
   Sparkles, TrendingUp, Target, Send, Award, MapPin, Phone, Linkedin, GraduationCap, Lightbulb,
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
-  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X, Scale,
+  RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X, Scale, Lock,
 } from 'lucide-react'
 import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, printPdf, printHtmlDoc, hasArabicScript, exportPrepPdf, exportPrepDocx, type PrepExportData, type DocKind } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
+import { type Lang, t, TAB_LABELS, TAB_SUBTITLES } from './lib/i18n'
+
+const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({ lang: 'id', setLang: () => {} })
+function useLang() { return useContext(LangContext) }
 
 // ── PROVIDER BADGE ────────────────────────────────────────────────────────────
 function ProviderBadge({ provider }: { provider?: 'gemini' | 'groq' | null }) {
@@ -190,7 +194,7 @@ const STATUS_CONFIG = {
 
 // ── AUTH GATE ────────────────────────────────────────────────────────────────
 export default function HomePage() {
-  const { status } = useSession()
+  const { data: session, status, update } = useSession()
 
   if (status === 'loading') {
     return (
@@ -200,11 +204,66 @@ export default function HomePage() {
     )
   }
 
-  if (status === 'unauthenticated') {
-    return <SignInScreen />
-  }
+  if (status === 'unauthenticated') return <SignInScreen />
+
+  if (session?.user?.mfaPending) return <MfaGate onVerified={update} />
 
   return <AppShell />
+}
+
+function MfaGate({ onVerified }: { onVerified: (data?: Record<string, unknown>) => Promise<unknown> }) {
+  const [code, setCode] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(''); setLoading(true)
+    const res = await fetch('/api/auth/mfa/verify-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: code }),
+    })
+    const data = await res.json()
+    setLoading(false)
+    if (!res.ok) { setError(data.error || 'Kode salah'); return }
+    await onVerified({ mfaToken: data.mfaToken })
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-sm space-y-5">
+        <div className="space-y-1">
+          <h1 className="font-bold text-gray-900 text-xl">Verifikasi 2FA</h1>
+          <p className="text-sm text-gray-400">Masukkan kode 6 digit dari aplikasi autentikator kamu.</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9 ]*"
+            maxLength={7}
+            placeholder="000 000"
+            value={code}
+            onChange={e => setCode(e.target.value.replace(/[^0-9 ]/g, ''))}
+            autoFocus
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-center text-2xl font-mono tracking-widest outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all"
+          />
+          {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading || code.replace(/\s/g, '').length < 6}
+            className="w-full py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Memverifikasi...' : 'Verifikasi'}
+          </button>
+        </form>
+        <button onClick={() => signOut({ callbackUrl: '/' })} className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          Keluar dan ganti akun
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function SignInScreen() {
@@ -328,19 +387,31 @@ function SignInScreen() {
   const [authError, setAuthError] = useState('')
   const [authSuccess, setAuthSuccess] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  const [needsMfa, setNeedsMfa] = useState(false)
+  const [formTotp, setFormTotp] = useState('')
 
   const handleCredentialsLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setAuthError('')
     setAuthLoading(true)
     try {
-      const res = await signIn('credentials', { email: formEmail, password: formPassword, redirect: false })
-      if (res?.error) setAuthError('Email atau password salah')
+      const res = await signIn('credentials', {
+        email: formEmail,
+        password: formPassword,
+        ...(needsMfa ? { totp: formTotp } : {}),
+        redirect: false,
+      }) as any
+      if (res?.code === 'OtpRequired') {
+        setNeedsMfa(true)
+        setAuthError('')
+      } else if (res?.error) {
+        setAuthError(needsMfa ? 'Kode autentikator salah' : 'Email atau password salah')
+      }
     } catch {
       setAuthError('Email atau password salah')
     }
     setAuthLoading(false)
-  }, [formEmail, formPassword])
+  }, [formEmail, formPassword, needsMfa, formTotp])
 
   const handleRegister = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -362,300 +433,280 @@ function SignInScreen() {
   }, [formName, formEmail, formPassword])
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[1fr_460px]">
-      {/* ── Left: hero ── */}
+    <div className="min-h-screen lg:grid lg:grid-cols-[1fr_420px]">
+
+      {/* ── LEFT: dark hero ── */}
       <div
         ref={heroRef}
         onMouseMove={handleHeroMouseMove}
-        className="relative hidden lg:flex flex-col justify-between p-14 text-white overflow-hidden"
-        style={{ background: 'linear-gradient(150deg,#060e24 0%,#0d2158 40%,#0a3d6b 70%,#054d60 100%)' }}
+        className="relative hidden lg:flex flex-col p-14 text-white overflow-hidden"
+        style={{ background: 'linear-gradient(145deg,#04091a 0%,#080f2e 45%,#10073a 75%,#060d22 100%)' }}
       >
-        {/* Parallax blob layer — shifts with mouse */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ transform: `translate(${parallax.x * 0.45}px, ${parallax.y * 0.45}px)`, transition: 'transform 0.12s ease-out' }}
-        >
-          <div className="absolute -top-24 -right-24 w-[32rem] h-[32rem] rounded-full opacity-[0.18] blur-3xl animate-blob"
-            style={{ background: 'radial-gradient(circle,#6ea8fe,transparent)' }} />
-          <div className="absolute bottom-0 -left-32 w-80 h-80 rounded-full opacity-[0.12] blur-3xl animate-blob-alt"
-            style={{ background: 'radial-gradient(circle,#a78bfa,transparent)' }} />
-          <div className="absolute top-[45%] right-[15%] w-64 h-64 rounded-full opacity-[0.08] blur-2xl animate-blob-slow"
-            style={{ background: 'radial-gradient(circle,#fb923c,transparent)' }} />
+        {/* Subtle grain texture */}
+        <div className="absolute inset-0 pointer-events-none opacity-[0.025]"
+          style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")', backgroundSize: '200px 200px' }} />
+
+        {/* Gradient orbs — parallax */}
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ transform: `translate(${parallax.x * 0.4}px,${parallax.y * 0.4}px)`, transition: 'transform 0.15s ease-out' }}>
+          <div className="absolute -top-40 -left-20 w-[32rem] h-[32rem] rounded-full blur-[100px] animate-blob"
+            style={{ background: 'radial-gradient(circle,rgba(79,70,229,0.28),transparent 70%)' }} />
+          <div className="absolute -bottom-20 right-20 w-[28rem] h-[28rem] rounded-full blur-[90px] animate-blob-alt"
+            style={{ background: 'radial-gradient(circle,rgba(124,58,237,0.2),transparent 70%)' }} />
+          <div className="absolute top-[35%] right-[10%] w-60 h-60 rounded-full blur-3xl animate-blob-slow"
+            style={{ background: 'radial-gradient(circle,rgba(16,185,129,0.1),transparent 70%)' }} />
         </div>
 
-        {/* Floating ATS preview card */}
-        <div className="absolute bottom-24 right-10 hidden xl:block animate-slide-up anim-d1000 pointer-events-none">
-          <div className="w-48 bg-white/[0.07] backdrop-blur-xl rounded-2xl p-4 ring-1 ring-white/15 animate-float" style={{ animationDelay: '1.8s' }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-semibold text-white/55 uppercase tracking-wide">ATS Score</span>
-              <span className="text-sm font-extrabold text-emerald-400">87%</span>
+        {/* Floating ATS card — bottom right */}
+        <div className="absolute bottom-20 right-12 hidden xl:block pointer-events-none animate-slide-up anim-d1000">
+          <div className="w-48 rounded-2xl p-4 animate-float" style={{ animationDelay: '2s', background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.09)' }}>
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[9px] font-semibold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.4)' }}>ATS Score</span>
+              <span className="text-xs font-black text-emerald-400">87%</span>
             </div>
-            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
-              <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full animate-progress-fill" />
+            <div className="h-1 rounded-full overflow-hidden mb-3" style={{ background: 'rgba(255,255,255,0.07)' }}>
+              <div className="h-full rounded-full animate-progress-fill" style={{ background: 'linear-gradient(90deg,#34d399,#06b6d4)' }} />
             </div>
-            <div className="flex flex-wrap gap-1 mb-3">
-              {['Python', 'SQL', 'Tableau', 'Analytics'].map(kw => (
-                <span key={kw} className="text-[9px] bg-emerald-400/15 text-emerald-300 px-1.5 py-0.5 rounded-full border border-emerald-400/20">
-                  ✓ {kw}
-                </span>
+            <div className="flex flex-wrap gap-1 mb-2.5">
+              {['Python','SQL','Tableau','Analytics'].map(kw => (
+                <span key={kw} className="text-[8.5px] px-1.5 py-0.5 rounded-full font-medium"
+                  style={{ background: 'rgba(52,211,153,0.1)', color: '#6ee7b7', border: '1px solid rgba(52,211,153,0.18)' }}>✓ {kw}</span>
               ))}
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: AI_STATUSES[statusIdx].dot }} />
-              <p className="text-[9px] text-white/45 leading-tight transition-opacity duration-200" style={{ opacity: statusVisible ? 1 : 0 }}>
+              <p className="text-[8.5px] leading-tight transition-opacity duration-300" style={{ color: 'rgba(255,255,255,0.35)', opacity: statusVisible ? 1 : 0 }}>
                 {AI_STATUSES[statusIdx].text}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Logo */}
-        <div className="relative flex items-center gap-3 animate-fade-in">
-          <div className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center ring-1 ring-white/15">
-            <Briefcase size={20} />
-          </div>
-          <span className="font-bold text-lg tracking-tight">Job Application Suite</span>
-        </div>
+        {/* ── Content column ── */}
+        <div className="relative flex flex-col h-full max-w-[520px]">
 
-        {/* Hero copy */}
-        <div className="relative space-y-8">
-          <div className="space-y-4">
-            {/* Dual-AI badge + live status ticker */}
-            <div className="space-y-2 animate-slide-up anim-d100">
-              <div className="inline-flex items-center gap-2 bg-white/8 backdrop-blur-sm rounded-full pl-1.5 pr-3.5 py-1.5 ring-1 ring-white/15">
-                <div className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
-                  <span className="animate-twinkle inline-flex"><GeminiMark id="hero-gem" /></span>
-                  <span className="text-[11px] font-semibold text-white/90">Gemini</span>
-                </div>
-                <div className="w-px h-3 bg-white/20" />
-                <div className="flex items-center gap-1">
-                  <span className="animate-groq-pulse inline-flex"><GroqMark light /></span>
-                  <span className="text-[11px] font-semibold text-orange-300">Groq</span>
-                </div>
-                <span className="text-[10px] text-white/50 ml-0.5">Dual AI Engine</span>
+          {/* Logo */}
+          <div className="flex items-center gap-3 animate-fade-in">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+              <Briefcase size={17} className="text-white" />
+            </div>
+            <span className="font-semibold text-sm tracking-tight" style={{ color: 'rgba(255,255,255,0.85)' }}>Job Application Suite</span>
+          </div>
+
+          {/* Main hero — vertically centered */}
+          <div className="flex-1 flex flex-col justify-center space-y-7">
+
+            {/* AI dual badge */}
+            <div className="animate-slide-up anim-d100 space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: '#818cf8' }} />
+                <span className="animate-twinkle inline-flex"><GeminiMark id="hero-gem" /></span>
+                <span className="text-[11px] font-semibold" style={{ color: 'rgba(255,255,255,0.8)' }}>Gemini</span>
+                <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>·</span>
+                <span className="animate-groq-pulse inline-flex"><GroqMark light /></span>
+                <span className="text-[11px] font-semibold text-orange-300">Groq</span>
+                <span className="text-[10px] ml-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Dual AI Engine</span>
               </div>
-              {/* Live AI process ticker */}
-              <div className="flex items-center gap-2 ml-1">
+              <div className="flex items-center gap-1.5 pl-1">
                 <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: AI_STATUSES[statusIdx].dot }} />
-                <p className="text-[11px] text-white/40 transition-opacity duration-200" style={{ opacity: statusVisible ? 1 : 0 }}>
+                <p className="text-[10.5px] transition-opacity duration-300" style={{ color: 'rgba(255,255,255,0.3)', opacity: statusVisible ? 1 : 0 }}>
                   {AI_STATUSES[statusIdx].text}
                 </p>
               </div>
             </div>
 
-            {/* key= forces remount → CSS slide-up restarts from translateY(110%) (clipped/invisible).
-                Interval is synced to the 5.5s CSS loop so the swap lands in the invisible phase. */}
-            <h2 key={headlineSet} className="text-[2.6rem] font-extrabold leading-[1.15] tracking-tight">
+            {/* Headline */}
+            <h2 key={headlineSet} className="text-[3.4rem] font-black leading-[1.05] tracking-tighter">
               <span className="block" style={{ clipPath: 'inset(0 0 -35% 0)' }}>
-                <span className="block animate-headline-loop" style={{ animationDelay: '0ms' }}>
-                  {HEADLINE_SETS[headlineSet].l1}
-                </span>
+                <span className="block animate-headline-loop" style={{ animationDelay: '0ms' }}>{HEADLINE_SETS[headlineSet].l1}</span>
               </span>
               <span className="block" style={{ clipPath: 'inset(0 0 -35% 0)' }}>
-                <span className="block animate-headline-loop" style={{ animationDelay: '140ms' }}>
-                  {HEADLINE_SETS[headlineSet].l2}
-                </span>
+                <span className="block animate-headline-loop" style={{ animationDelay: '140ms' }}>{HEADLINE_SETS[headlineSet].l2}</span>
               </span>
               <span className="block" style={{ clipPath: 'inset(0 0 -35% 0)' }}>
                 <span className="block animate-headline-loop" style={{ animationDelay: '280ms' }}>
                   <span className="text-transparent bg-clip-text animate-shimmer-grad"
-                    style={{ backgroundImage: 'linear-gradient(90deg,#7dd3fc,#bae6fd,#a5f3fc,#7dd3fc)' }}>
+                    style={{ backgroundImage: 'linear-gradient(90deg,#a5b4fc,#c4b5fd,#7dd3fc,#a5b4fc)' }}>
                     {HEADLINE_SETS[headlineSet].l3}
                   </span>
-                  {/* Emoji must live outside bg-clip-text — color emoji are images,
-                      not glyphs, so -webkit-background-clip:text hides them */}
-                  {HEADLINE_SETS[headlineSet].em && (
-                    <span className="text-white">{HEADLINE_SETS[headlineSet].em}</span>
-                  )}
+                  {HEADLINE_SETS[headlineSet].em && <span className="text-white">{HEADLINE_SETS[headlineSet].em}</span>}
                 </span>
               </span>
             </h2>
 
-            {/* Typewriter role line */}
-            <div className="flex items-center gap-2 h-6 animate-slide-up anim-d250">
-              <span className="text-white/40 text-sm">Dirancang untuk</span>
-              <span className="text-sky-300 text-sm font-semibold tracking-tight">
-                {typed}<span className="animate-blink font-thin text-sky-400/70 ml-px">|</span>
+            {/* Typewriter */}
+            <div className="flex items-center gap-2 animate-slide-up anim-d250">
+              <span className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>Dirancang untuk</span>
+              <span className="text-sm font-semibold text-indigo-300">
+                {typed}<span className="animate-blink font-thin ml-px" style={{ color: 'rgba(129,140,248,0.5)' }}>|</span>
               </span>
             </div>
 
-            <p className="text-white/60 text-sm leading-relaxed max-w-[22rem] animate-slide-up anim-d300">
+            <p className="text-sm leading-relaxed max-w-sm animate-slide-up anim-d300" style={{ color: 'rgba(255,255,255,0.45)' }}>
               Analisis kecocokan CV, buat dokumen profesional, dan latihan interview — semua dibantu AI, semua di satu tempat.
             </p>
 
+            {/* Feature pills — horizontal, compact */}
+            <div className="flex flex-wrap gap-2 animate-slide-up anim-d400">
+              {FEATURES.map((f) => (
+                <div key={f.title} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-all duration-200 cursor-default"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(99,102,241,0.12)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(99,102,241,0.3)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.09)' }}>
+                  <span style={{ color: '#a5b4fc' }}>{f.icon}</span>
+                  <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>{f.title}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Feature list — staggered entrance with hover glow */}
-          <div className="space-y-2.5">
-            {FEATURES.map((f, i) => (
-              <div key={f.title}
-                className={`flex items-center gap-3 group animate-slide-up anim-d${400 + i * 100}`}>
-                <div className="w-8 h-8 rounded-lg bg-white/8 ring-1 ring-white/12 flex items-center justify-center shrink-0 text-sky-300 group-hover:bg-sky-400/15 group-hover:ring-sky-400/30 group-hover:text-sky-200 group-hover:scale-110 transition-all duration-200">
-                  {f.icon}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold leading-none mb-0.5 text-white/95 group-hover:text-white transition-colors">{f.title}</p>
-                  <p className="text-xs text-white/50 group-hover:text-white/60 transition-colors">{f.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Stats row — animated counters */}
-          <div className="flex items-center gap-0 pt-1 animate-slide-up anim-d800">
+          {/* Stats — bottom */}
+          <div className="flex items-center gap-7 pb-1 animate-slide-up anim-d600">
             {STAT_ITEMS.map(({ icon, label, count }, i) => (
-              <div key={label} className="flex items-center">
-                {i > 0 && <span className="w-px h-3 bg-white/15 mx-4" />}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sky-400/70">{icon}</span>
-                  <div>
-                    <p className="text-[13px] font-bold text-white/80 leading-none">{count}+</p>
-                    <p className="text-[10px] text-white/40 leading-none mt-0.5">{label}</p>
-                  </div>
+              <div key={label} className="flex items-center gap-2">
+                {i > 0 && <span className="w-px h-5 mr-5" style={{ background: 'rgba(255,255,255,0.08)' }} />}
+                <div>
+                  <p className="text-base font-black leading-none" style={{ color: 'rgba(255,255,255,0.85)' }}>{count}+</p>
+                  <p className="text-[10px] mt-0.5 leading-none" style={{ color: 'rgba(255,255,255,0.3)' }}>{label}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="relative text-[11px] text-white/30 animate-fade-in anim-d1000">© {new Date().getFullYear()} Job Application Suite</p>
+        <p className="relative text-[11px] mt-6 animate-fade-in anim-d1000" style={{ color: 'rgba(255,255,255,0.18)' }}>
+          © {new Date().getFullYear()} Job Application Suite
+        </p>
       </div>
 
-      {/* ── Right: sign in card ── */}
-      <div className="flex items-center justify-center px-6 py-12 bg-[#f7f8fb]">
-        <div className="w-full max-w-[360px] space-y-4">
+      {/* ── RIGHT: light sign-in panel ── */}
+      <div className="flex items-center justify-center px-8 py-10 bg-[#f5f6fa]">
+        <div className="w-full max-w-[340px] space-y-3">
 
           {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2 mb-6 animate-fade-in">
-            <div className="w-9 h-9 bg-brand-gradient rounded-xl flex items-center justify-center">
-              <Briefcase size={18} className="text-white" />
+          <div className="lg:hidden flex items-center gap-2.5 mb-8 animate-fade-in">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+              <Briefcase size={17} className="text-white" />
             </div>
-            <span className="font-bold text-gray-900">Job Suite</span>
+            <span className="font-bold text-gray-900 text-sm">Job Application Suite</span>
           </div>
 
-          {/* Card — slides in from right */}
-          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/70 border border-gray-100/80 p-8 space-y-4 animate-slide-right anim-d200">
-            <div className="space-y-1.5 animate-slide-up anim-d300">
-              <h1 className="font-extrabold text-gray-900 text-[1.6rem] tracking-tight leading-none">
+          {/* Card */}
+          <div className="bg-white rounded-2xl p-7 space-y-4" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.06), 0 12px 40px rgba(0,0,0,0.08)', border: '1px solid rgba(0,0,0,0.06)' }}>
+
+            <div className="space-y-1 pb-1">
+              <h1 className="font-extrabold text-gray-900 text-[1.5rem] tracking-tight leading-none">
                 {authMode === 'login' ? 'Selamat datang' : 'Buat akun'}
               </h1>
-              <p className="text-sm text-gray-400">
-                {authMode === 'login' ? 'Masuk untuk mulai melamar kerja dengan bantuan AI.' : 'Daftar gratis, mulai melamar lebih cerdas.'}
+              <p className="text-[13px] text-gray-400 leading-snug">
+                {authMode === 'login' ? 'Masuk untuk mulai melamar lebih cerdas.' : 'Daftar gratis, mulai melamar lebih cerdas.'}
               </p>
             </div>
 
-            {/* Google Sign-in button */}
-            <div className="animate-slide-up anim-d400">
-              <button
-                onClick={() => signIn('google')}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3
-                           font-semibold text-gray-700 text-sm shadow-sm transition-all
-                           hover:shadow-md hover:border-gray-300 hover:bg-gray-50/80 active:scale-[.98]"
-              >
-                <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-                  <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
-                  <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
-                  <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
-                  <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
-                </svg>
-                Lanjutkan dengan Google
-              </button>
-            </div>
+            {/* Google */}
+            <button onClick={() => signIn('google')}
+              className="w-full flex items-center justify-center gap-2.5 bg-white rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all active:scale-[.98]"
+              style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.1)')}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)')}>
+              <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden>
+                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/>
+                <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/>
+                <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
+              </svg>
+              Lanjutkan dengan Google
+            </button>
 
-            {/* Divider */}
             <div className="flex items-center gap-3">
               <div className="flex-1 border-t border-gray-100" />
               <span className="text-[11px] text-gray-300 font-medium">atau</span>
               <div className="flex-1 border-t border-gray-100" />
             </div>
 
-            {/* Email/Password form */}
-            <form onSubmit={authMode === 'login' ? handleCredentialsLogin : handleRegister} className="space-y-2.5">
-              {authMode === 'register' && (
-                <input
-                  type="text"
-                  placeholder="Nama (opsional)"
-                  value={formName}
-                  onChange={e => setFormName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
-                />
+            <form onSubmit={authMode === 'login' ? handleCredentialsLogin : handleRegister} className="space-y-2">
+              {needsMfa ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-700 px-3 py-2 rounded-xl border border-amber-100">
+                    <BadgeCheck size={13} className="text-amber-500 shrink-0" />
+                    Masukkan kode dari aplikasi autentikator
+                  </div>
+                  <input type="text" inputMode="numeric" maxLength={6} placeholder="000000" value={formTotp}
+                    onChange={e => setFormTotp(e.target.value.replace(/\D/g, ''))} required autoFocus
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-mono text-center outline-none tracking-[0.35em] text-lg"
+                    style={{ border: '1.5px solid #fcd34d', background: '#fffbeb' }} />
+                  <button type="button" onClick={() => { setNeedsMfa(false); setFormTotp(''); setAuthError('') }}
+                    className="text-xs text-gray-400 hover:text-gray-600 w-full text-center transition-colors">← Kembali</button>
+                </>
+              ) : (
+                <>
+                  {authMode === 'register' && (
+                    <input type="text" placeholder="Nama (opsional)" value={formName} onChange={e => setFormName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
+                      style={{ border: '1.5px solid #e2e8f0' }}
+                      onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
+                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
+                  )}
+                  <input type="email" placeholder="Email" value={formEmail} onChange={e => setFormEmail(e.target.value)} required
+                    className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
+                    style={{ border: '1.5px solid #e2e8f0' }}
+                    onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
+                    onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
+                  <input type="password" placeholder="Password (min. 8 karakter)" value={formPassword} onChange={e => setFormPassword(e.target.value)} required minLength={8}
+                    className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
+                    style={{ border: '1.5px solid #e2e8f0' }}
+                    onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
+                    onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
+                </>
               )}
-              <input
-                type="email"
-                placeholder="Email"
-                value={formEmail}
-                onChange={e => setFormEmail(e.target.value)}
-                required
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
-              />
-              <input
-                type="password"
-                placeholder="Password (min. 8 karakter)"
-                value={formPassword}
-                onChange={e => setFormPassword(e.target.value)}
-                required
-                minLength={8}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all placeholder:text-gray-300"
-              />
               {authSuccess && <p className="text-xs text-emerald-600 font-medium">{authSuccess}</p>}
               {authError && <p className="text-xs text-red-500">{authError}</p>}
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold transition-all hover:bg-gray-800 active:scale-[.98] disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {authLoading ? 'Memproses...' : authMode === 'login' ? 'Masuk' : 'Daftar'}
+              <button type="submit" disabled={authLoading || (needsMfa && formTotp.length < 6)}
+                className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#7c3aed)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+                {authLoading ? 'Memproses...' : needsMfa ? 'Verifikasi' : authMode === 'login' ? 'Masuk' : 'Daftar'}
               </button>
             </form>
 
             <p className="text-xs text-center text-gray-400">
               {authMode === 'login' ? (
                 <>Belum punya akun?{' '}
-                  <button onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess('') }} className="text-sky-500 font-semibold hover:text-sky-600">
-                    Daftar
-                  </button>
+                  <button onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess('') }}
+                    className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">Daftar</button>
                 </>
               ) : (
                 <>Sudah punya akun?{' '}
-                  <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess('') }} className="text-sky-500 font-semibold hover:text-sky-600">
-                    Masuk
-                  </button>
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess('') }}
+                    className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">Masuk</button>
                 </>
               )}
             </p>
 
-            {/* Trust signals */}
-            <div className="space-y-1.5">
+            <div className="pt-1 space-y-1.5 border-t border-gray-50 mt-1">
               {[
-                [<CheckCircle key="1" size={12} className="text-emerald-500 shrink-0" />, 'CV dan data kamu privat — hanya untuk akunmu'],
-                [<CheckCircle key="2" size={12} className="text-emerald-500 shrink-0" />, 'Gratis digunakan, tanpa kartu kredit'],
+                [<CheckCircle key="1" size={11} className="text-emerald-500 shrink-0" />, 'Data kamu privat & aman'],
+                [<CheckCircle key="2" size={11} className="text-emerald-500 shrink-0" />, 'Gratis, tanpa kartu kredit'],
               ].map(([icon, text], i) => (
-                <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-400">{icon}{text}</div>
+                <div key={i} className="flex items-center gap-2 text-[11px] text-gray-400">{icon}{text}</div>
               ))}
             </div>
+          </div>
 
-            {/* Divider */}
-            <div className="border-t border-gray-100" />
-
-            {/* Dual AI Engine badges */}
-            <div className="space-y-2">
-              <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest">Powered by</p>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-transparent flex-1 justify-center transition-transform hover:scale-[1.02]"
-                  style={{ background: 'linear-gradient(#f8fafc,#f8fafc) padding-box, linear-gradient(135deg,#4285F4 0%,#9B72CB 50%,#D96570 100%) border-box' }}>
-                  <span className="animate-twinkle inline-flex"><GeminiMark id="card-gem" /></span>
-                  <span className="text-[11.5px] font-semibold"
-                    style={{ background: 'linear-gradient(135deg,#4285F4,#9B72CB,#D96570)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                    Google Gemini
-                  </span>
-                </div>
-                <span className="text-gray-300 text-sm font-light">+</span>
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-orange-200/70 bg-orange-50/60 flex-1 justify-center animate-badge-glow transition-transform hover:scale-[1.02]">
-                  <span className="animate-groq-pulse inline-flex"><GroqMark /></span>
-                  <span className="text-[11.5px] font-semibold text-orange-600">Groq</span>
-                </div>
+          {/* AI badges */}
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)' }}>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest shrink-0">AI</span>
+            <div className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-1.5 flex-1 justify-center rounded-lg px-2 py-1.5 bg-white transition-transform hover:scale-[1.02]"
+                style={{ border: '1px solid #e0e7ff', boxShadow: '0 1px 3px rgba(99,102,241,0.08)' }}>
+                <span className="animate-twinkle inline-flex"><GeminiMark id="card-gem" /></span>
+                <span className="text-[11px] font-semibold" style={{ background: 'linear-gradient(135deg,#4285F4,#9B72CB)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Gemini</span>
               </div>
-              <p className="text-[10px] text-gray-300 leading-relaxed">Groq sebagai backup otomatis jika Gemini sibuk atau kuota habis.</p>
+              <span className="text-gray-300 text-xs">+</span>
+              <div className="flex items-center gap-1.5 flex-1 justify-center rounded-lg px-2 py-1.5 bg-white animate-badge-glow transition-transform hover:scale-[1.02]"
+                style={{ border: '1px solid #fed7aa', boxShadow: '0 1px 3px rgba(251,146,60,0.1)' }}>
+                <span className="animate-groq-pulse inline-flex"><GroqMark /></span>
+                <span className="text-[11px] font-semibold text-orange-500">Groq</span>
+              </div>
             </div>
           </div>
         </div>
@@ -690,12 +741,24 @@ function AppShell() {
   const [keysLoaded, setKeysLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dark, setDark] = useState(false)
+  const [lang, setLangState] = useState<Lang>('id')
   const [showAccountPicker, setShowAccountPicker] = useState(false)
   const [knownAccounts, setKnownAccounts] = useState<KnownAccount[]>([])
   const accountPickerRef = useRef<HTMLDivElement>(null)
 
   // Sync toggle state with the class the anti-flash script already set.
   useEffect(() => { setDark(document.documentElement.classList.contains('dark')) }, [])
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('lang') as Lang | null
+      if (saved === 'en' || saved === 'id') setLangState(saved)
+    } catch { /* ignore */ }
+  }, [])
+
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l)
+    try { localStorage.setItem('lang', l) } catch { /* ignore */ }
+  }, [])
 
   // Save current account to localStorage so it appears in the switcher list.
   useEffect(() => {
@@ -857,6 +920,7 @@ function AppShell() {
   }
 
   return (
+    <LangContext.Provider value={{ lang, setLang }}>
     <div className="min-h-screen flex">
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col bg-white border-r border-gray-100 shadow-sidebar fixed inset-y-0 left-0 z-30">
@@ -878,20 +942,17 @@ function AppShell() {
               className={`nav-link w-full ${activeTab === tab.id ? 'nav-link-active' : ''}`}
             >
               {tab.icon}
-              {tab.label}
+              {TAB_LABELS[tab.id]?.[lang] ?? tab.label}
             </button>
           ))}
         </nav>
 
         <div className="p-3 border-t border-gray-100">
-          <button onClick={toggleTheme} className="w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors mb-1">
-            {dark ? <Sun size={16} /> : <Moon size={16} />} {dark ? 'Mode terang' : 'Mode gelap'}
-          </button>
           <div className="relative" ref={accountPickerRef}>
             {/* Account picker popover */}
             {showAccountPicker && (
               <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden z-50">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-4 pt-3 pb-1">Akun</p>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-4 pt-3 pb-1">{t(lang, 'accounts')}</p>
                 {knownAccounts.map(acc => {
                   const isCurrent = acc.email === session?.user?.email
                   return (
@@ -917,13 +978,13 @@ function AppShell() {
                     onClick={addNewAccount}
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-primary font-medium hover:bg-primary/5 transition-colors"
                   >
-                    <Plus size={14} /> Tambah akun lain
+                    <Plus size={14} /> {t(lang, 'addAccount')}
                   </button>
                   <button
                     onClick={() => { setShowAccountPicker(false); signOut() }}
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-500 font-medium hover:bg-red-50 transition-colors"
                   >
-                    <LogOut size={14} /> Keluar
+                    <LogOut size={14} /> {t(lang, 'signOut')}
                   </button>
                 </div>
               </div>
@@ -951,12 +1012,12 @@ function AppShell() {
         <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-100">
           <div className="flex items-center justify-between gap-4 px-5 md:px-8 h-16">
             <div className="min-w-0">
-              <h1 className="font-bold text-gray-900 text-lg leading-tight truncate">{activeMeta.label}</h1>
-              <p className="text-xs text-gray-500 truncate">{activeMeta.subtitle}</p>
+              <h1 className="font-bold text-gray-900 text-lg leading-tight truncate">{TAB_LABELS[activeTab]?.[lang] ?? activeMeta.label}</h1>
+              <p className="text-xs text-gray-500 truncate">{TAB_SUBTITLES[activeTab]?.[lang] ?? activeMeta.subtitle}</p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setActiveTab('analyze')} className="btn-primary text-sm hidden sm:inline-flex">
-                <Plus size={15} /> Tambah Lowongan
+                <Plus size={15} /> {t(lang, 'addJob')}
               </button>
               <div className="md:hidden">
                 <Avatar name={userName} image={userImage} />
@@ -969,7 +1030,7 @@ function AppShell() {
           {loading ? (
             <div className="card text-center py-16">
               <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-3" />
-              <p className="text-sm text-gray-500">Memuat data kamu...</p>
+              <p className="text-sm text-gray-500">{t(lang, 'loading')}</p>
             </div>
           ) : (
             <div className="animate-fade-in">
@@ -1012,7 +1073,7 @@ function AppShell() {
               )}
               {activeTab === 'worldclock' && <WorldClockTab />}
               {activeTab === 'settings' && (
-                <SettingsTab configuredKeys={configuredKeys} onSaved={refreshKeys} />
+                <SettingsTab configuredKeys={configuredKeys} onSaved={refreshKeys} dark={dark} toggleTheme={toggleTheme} />
               )}
             </div>
           )}
@@ -1030,11 +1091,12 @@ function AppShell() {
             }`}
           >
             {tab.icon}
-            {tab.label.split(' ')[0]}
+            {(TAB_LABELS[tab.id]?.[lang] ?? tab.label).split(' ')[0]}
           </button>
         ))}
       </nav>
     </div>
+    </LangContext.Provider>
   )
 }
 
@@ -5317,7 +5379,13 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
 }
 
 // ── SETTINGS TAB ──────────────────────────────────────────────────────────────
-function SettingsTab({ configuredKeys, onSaved }: { configuredKeys: ConfiguredKeys; onSaved: () => void }) {
+function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
+  configuredKeys: ConfiguredKeys
+  onSaved: () => void
+  dark: boolean
+  toggleTheme: () => void
+}) {
+  const { lang, setLang } = useLang()
   const [keys, setKeys] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
   const [show, setShow] = useState<Record<string, boolean>>({})
@@ -5364,6 +5432,130 @@ function SettingsTab({ configuredKeys, onSaved }: { configuredKeys: ConfiguredKe
     onSaved()
   }
 
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null)
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [pwError, setPwError] = useState('')
+  const [pwSuccess, setPwSuccess] = useState('')
+  const [pwLoading, setPwLoading] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/has-password')
+      .then(r => r.json())
+      .then(d => setHasPassword(d.hasPassword))
+      .catch(() => setHasPassword(false))
+  }, [])
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwError(''); setPwSuccess('')
+    if (newPw !== confirmPw) { setPwError('Password baru tidak cocok'); return }
+    setPwLoading(true)
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST', headers: JSON_HEADERS,
+      body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
+    })
+    const data = await res.json()
+    setPwLoading(false)
+    if (!res.ok) { setPwError(data.error); return }
+    setCurrentPw(''); setNewPw(''); setConfirmPw('')
+    setPwSuccess('Password berhasil diubah!')
+    setHasPassword(true)
+  }
+
+  useEffect(() => {
+    fetch('/api/preferences').then(r => r.json()).then(d => setAiPref(d.aiModelPref || 'auto')).catch(() => {})
+    fetch('/api/auth/mfa/status').then(r => r.json()).then(d => setMfaEnabled(!!d.enabled)).catch(() => setMfaEnabled(false))
+  }, [])
+
+  const handleSaveAiPref = async (pref: 'auto' | 'gemini' | 'groq') => {
+    setAiPref(pref)
+    await fetch('/api/preferences', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ aiModelPref: pref }) })
+    setAiPrefSaved(true)
+    setTimeout(() => setAiPrefSaved(false), 2000)
+  }
+
+  const startMfaSetup = async () => {
+    setMfaLoading(true); setMfaError('')
+    const res = await fetch('/api/auth/mfa/setup')
+    const data = await res.json()
+    setMfaLoading(false)
+    if (!res.ok) { setMfaError(data.error || 'Setup failed'); return }
+    setMfaQr(data.qrDataUrl); setMfaSecret(data.secret)
+  }
+
+  const handleEnableMfa = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMfaLoading(true); setMfaError('')
+    const res = await fetch('/api/auth/mfa/enable', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ token: mfaToken }) })
+    const data = await res.json()
+    setMfaLoading(false)
+    if (!res.ok) { setMfaError(data.error || 'Kode salah'); return }
+    setMfaEnabled(true); setMfaSetupDone(true); setMfaQr(''); setMfaSecret(''); setMfaToken('')
+  }
+
+  const handleDisableMfa = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMfaLoading(true); setMfaError('')
+    const res = await fetch('/api/auth/mfa/disable', {
+      method: 'POST', headers: JSON_HEADERS,
+      body: JSON.stringify({ token: mfaDisableToken, password: mfaDisablePw }),
+    })
+    const data = await res.json()
+    setMfaLoading(false)
+    if (!res.ok) { setMfaError(data.error || 'Gagal menonaktifkan MFA'); return }
+    setMfaEnabled(false); setMfaDisableToken(''); setMfaDisablePw('')
+  }
+
+  const handleDeleteAccount = (e: React.FormEvent) => {
+    e.preventDefault()
+    setDeleteError('')
+    setShowDeleteModal(true)
+  }
+
+  const confirmDeleteAccount = async () => {
+    setDeleteLoading(true)
+    const res = await fetch('/api/account', {
+      method: 'DELETE', headers: JSON_HEADERS,
+      body: JSON.stringify({ confirmEmail: deleteConfirmEmail }),
+    })
+    let data: { error?: string } = {}
+    try { data = await res.json() } catch { /* empty body */ }
+    setDeleteLoading(false)
+    if (!res.ok) {
+      setShowDeleteModal(false)
+      setDeleteError(data.error || 'Gagal menghapus akun')
+      return
+    }
+    // JWT cookie stays valid after DB delete — sign out first to clear it.
+    await signOut({ redirect: false })
+    window.location.replace('/')
+  }
+
+  const [settingsView, setSettingsView] = useState<'menu' | 'api-keys' | 'adzuna' | 'password' | 'import' | 'appearance' | 'language' | 'export' | 'ai-model' | 'delete-account' | 'mfa'>('menu')
+
+  // AI model preference
+  const [aiPref, setAiPref] = useState<'auto' | 'gemini' | 'groq'>('auto')
+  const [aiPrefSaved, setAiPrefSaved] = useState(false)
+
+  // MFA
+  const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null)
+  const [mfaQr, setMfaQr] = useState('')
+  const [mfaSecret, setMfaSecret] = useState('')
+  const [mfaToken, setMfaToken] = useState('')
+  const [mfaDisableToken, setMfaDisableToken] = useState('')
+  const [mfaDisablePw, setMfaDisablePw] = useState('')
+  const [mfaError, setMfaError] = useState('')
+  const [mfaLoading, setMfaLoading] = useState(false)
+  const [mfaSetupDone, setMfaSetupDone] = useState(false)
+
+  // Delete account
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+
   // One-time migration of old browser localStorage data into the account.
   const importLocalData = async () => {
     setImporting(true)
@@ -5389,31 +5581,198 @@ function SettingsTab({ configuredKeys, onSaved }: { configuredKeys: ConfiguredKe
     setImporting(false)
   }
 
-  return (
-    <div className="max-w-3xl space-y-4">
-      <div className="card">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-            <Key size={16} className="text-primary" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">API Keys</h2>
-            <p className="text-xs text-gray-500">Disimpan terenkripsi di server, terikat ke akun kamu.</p>
-          </div>
-        </div>
+  const configuredApiCount = API_PROVIDERS.filter(p => configuredKeys[p.id]).length
 
-        <div className="space-y-4 mt-4">
+  const MENU_ITEMS = [
+    {
+      id: 'appearance' as const,
+      icon: dark ? <Sun size={20} className="text-amber-500" /> : <Moon size={20} className="text-slate-500" />,
+      bg: dark ? 'bg-amber-50' : 'bg-slate-100',
+      title: t(lang, 'appearance'),
+      desc: t(lang, 'appearanceDesc'),
+      badge: dark ? (lang === 'en' ? 'dark' : 'gelap') : (lang === 'en' ? 'light' : 'terang'),
+      badgeColor: 'badge-gray',
+    },
+    {
+      id: 'language' as const,
+      icon: <Languages size={20} className="text-sky-600" />,
+      bg: 'bg-sky-50',
+      title: t(lang, 'language'),
+      desc: t(lang, 'languageDesc'),
+      badge: lang === 'en' ? 'English' : 'Indonesia',
+      badgeColor: 'badge-blue',
+    },
+    {
+      id: 'api-keys' as const,
+      icon: <Key size={20} className="text-primary" />,
+      bg: 'bg-primary/10',
+      title: t(lang, 'apiKeys'),
+      desc: t(lang, 'apiKeysDesc'),
+      badge: configuredApiCount > 0 ? `${configuredApiCount} ${t(lang, 'saved')}` : null,
+      badgeColor: 'badge-blue',
+    },
+    {
+      id: 'adzuna' as const,
+      icon: <Search size={20} className="text-emerald-600" />,
+      bg: 'bg-emerald-50',
+      title: t(lang, 'adzunaTitle'),
+      desc: t(lang, 'adzunaDesc'),
+      badge: configuredKeys.adzuna ? t(lang, 'saved') : t(lang, 'notSet'),
+      badgeColor: configuredKeys.adzuna ? 'badge-green' : 'badge-gray',
+    },
+    {
+      id: 'password' as const,
+      icon: <Lock size={20} className="text-violet-600" />,
+      bg: 'bg-violet-50',
+      title: hasPassword ? t(lang, 'passwordTitle') : t(lang, 'setPasswordTitle'),
+      desc: hasPassword ? t(lang, 'passwordDesc') : t(lang, 'setPasswordDesc'),
+      badge: hasPassword ? t(lang, 'passwordActive') : null,
+      badgeColor: 'badge-green',
+    },
+    {
+      id: 'import' as const,
+      icon: <Upload size={20} className="text-amber-600" />,
+      bg: 'bg-amber-50',
+      title: t(lang, 'importTitle'),
+      desc: t(lang, 'importDesc'),
+      badge: null,
+      badgeColor: '',
+    },
+    {
+      id: 'export' as const,
+      icon: <Download size={20} className="text-teal-600" />,
+      bg: 'bg-teal-50',
+      title: t(lang, 'exportTitle'),
+      desc: t(lang, 'exportDesc'),
+      badge: null,
+      badgeColor: '',
+    },
+    {
+      id: 'ai-model' as const,
+      icon: <Sparkles size={20} className="text-purple-600" />,
+      bg: 'bg-purple-50',
+      title: t(lang, 'aiModelTitle'),
+      desc: t(lang, 'aiModelDesc'),
+      badge: aiPref === 'auto' ? (lang === 'en' ? 'auto' : 'otomatis') : aiPref,
+      badgeColor: 'badge-gray',
+    },
+    {
+      id: 'mfa' as const,
+      icon: <BadgeCheck size={20} className="text-emerald-600" />,
+      bg: 'bg-emerald-50',
+      title: t(lang, 'mfaTitle'),
+      desc: t(lang, 'mfaDesc'),
+      badge: mfaEnabled === null ? null : mfaEnabled ? t(lang, 'mfaActive') : t(lang, 'mfaInactive'),
+      badgeColor: mfaEnabled ? 'badge-green' : 'badge-gray',
+    },
+    {
+      id: 'delete-account' as const,
+      icon: <Trash2 size={20} className="text-red-500" />,
+      bg: 'bg-red-50',
+      title: t(lang, 'deleteAccountTitle'),
+      desc: t(lang, 'deleteAccountDesc'),
+      badge: null,
+      badgeColor: '',
+    },
+  ]
+
+  if (settingsView === 'menu') return (
+    <div className="max-w-2xl">
+      <h2 className="font-semibold text-gray-900 mb-4">{t(lang, 'settings')}</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {MENU_ITEMS.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setSettingsView(item.id)}
+            className="card text-left flex items-center gap-4 hover:shadow-md hover:border-gray-200 active:scale-[.99] transition-all cursor-pointer group"
+          >
+            <div className={`w-11 h-11 ${item.bg} rounded-xl flex items-center justify-center shrink-0`}>
+              {item.icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-gray-900 text-sm">{item.title}</span>
+                {item.badge && <span className={`${item.badgeColor} text-[10px]`}>{item.badge}</span>}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">{item.desc}</p>
+            </div>
+            <ChevronRight size={16} className="text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  const SubHeader = ({ title }: { title: string }) => (
+    <div className="flex items-center gap-3 mb-5">
+      <button onClick={() => setSettingsView('menu')} className="btn-secondary p-1.5 rounded-lg">
+        <ChevronLeft size={16} />
+      </button>
+      <h2 className="font-semibold text-gray-900">{title}</h2>
+    </div>
+  )
+
+  if (settingsView === 'appearance') return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'appearance')} />
+      <div className="card space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${dark ? 'bg-amber-50' : 'bg-slate-100'}`}>
+              {dark ? <Sun size={20} className="text-amber-500" /> : <Moon size={20} className="text-slate-500" />}
+            </div>
+            <div>
+              <p className="font-medium text-gray-900 text-sm">{dark ? t(lang, 'lightMode') : t(lang, 'darkMode')}</p>
+              <p className="text-xs text-gray-500">{lang === 'en' ? (dark ? 'Currently in dark mode' : 'Currently in light mode') : (dark ? 'Saat ini mode gelap' : 'Saat ini mode terang')}</p>
+            </div>
+          </div>
+          <button
+            onClick={toggleTheme}
+            className={`relative w-12 h-6 rounded-full transition-colors ${dark ? 'bg-primary' : 'bg-gray-200'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${dark ? 'translate-x-6' : ''}`} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (settingsView === 'language') return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'language')} />
+      <div className="card space-y-2">
+        {([['id', 'Bahasa Indonesia', 'ID'], ['en', 'English', 'EN']] as const).map(([code, label, badge]) => (
+          <button
+            key={code}
+            onClick={() => setLang(code)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
+              lang === code ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">{badge}</span>
+              <span className="font-medium text-gray-900 text-sm">{label}</span>
+            </div>
+            {lang === code && <CheckCircle size={16} className="text-primary" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  if (settingsView === 'api-keys') return (
+    <div className="max-w-2xl">
+      <SubHeader title="API Keys" />
+      <div className="card">
+        <p className="text-xs text-gray-500 mb-4">Disimpan terenkripsi di server, terikat ke akun kamu.</p>
+        <div className="space-y-4">
           {API_PROVIDERS.map(p => (
             <div key={p.id}>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                   {p.label}
-                  {p.active
-                    ? <span className="badge-green text-[10px]">aktif</span>
-                    : <span className="badge-gray text-[10px]">segera hadir</span>}
-                  {configuredKeys[p.id]
-                    ? <span className="badge-blue text-[10px]">tersimpan</span>
-                    : null}
+                  {p.active ? <span className="badge-green text-[10px]">aktif</span> : <span className="badge-gray text-[10px]">segera hadir</span>}
+                  {configuredKeys[p.id] ? <span className="badge-blue text-[10px]">tersimpan</span> : null}
                 </label>
                 <a href={p.helpUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
                   Ambil key <ExternalLink size={10} />
@@ -5428,62 +5787,38 @@ function SettingsTab({ configuredKeys, onSaved }: { configuredKeys: ConfiguredKe
                   className="input text-sm flex-1 font-mono"
                   autoComplete="off"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShow({ ...show, [p.id]: !show[p.id] })}
-                  className="btn-secondary text-xs px-3 whitespace-nowrap"
-                >
+                <button type="button" onClick={() => setShow({ ...show, [p.id]: !show[p.id] })} className="btn-secondary text-xs px-3 whitespace-nowrap">
                   {show[p.id] ? 'Sembunyikan' : 'Lihat'}
                 </button>
                 {configuredKeys[p.id] && (
-                  <button
-                    type="button"
-                    onClick={() => removeKey(p.id)}
-                    className="btn-secondary text-xs px-3 whitespace-nowrap text-red-600"
-                  >
-                    Hapus
-                  </button>
+                  <button type="button" onClick={() => removeKey(p.id)} className="btn-secondary text-xs px-3 whitespace-nowrap text-red-600">Hapus</button>
                 )}
               </div>
-              {!p.active && (
-                <p className="text-xs text-gray-400 mt-1">Tersimpan untuk nanti — backend belum memakai provider ini.</p>
-              )}
+              {!p.active && <p className="text-xs text-gray-400 mt-1">Tersimpan untuk nanti — backend belum memakai provider ini.</p>}
             </div>
           ))}
         </div>
-
         <div className="flex items-center justify-between mt-5">
           <p className="text-xs text-gray-400 flex items-center gap-1">
-            <AlertCircle size={11} /> Key dienkripsi (AES-256-GCM) sebelum disimpan dan tidak pernah dikirim balik ke browser.
+            <AlertCircle size={11} /> Key dienkripsi (AES-256-GCM) sebelum disimpan.
           </p>
-          <button onClick={handleSave} className="btn-primary text-sm">
-            {saved ? '✓ Tersimpan!' : 'Simpan Keys'}
-          </button>
+          <button onClick={handleSave} className="btn-primary text-sm">{saved ? '✓ Tersimpan!' : 'Simpan Keys'}</button>
         </div>
       </div>
+    </div>
+  )
 
-      {/* Adzuna — job search source */}
+  if (settingsView === 'adzuna') return (
+    <div className="max-w-2xl">
+      <SubHeader title="Adzuna — Cari Loker" />
       <div className="card">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-              <Search size={16} className="text-primary" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                Adzuna — Cari Loker
-                {configuredKeys.adzuna
-                  ? <span className="badge-green text-[10px]">tersimpan</span>
-                  : <span className="badge-gray text-[10px]">belum diset</span>}
-              </h2>
-              <p className="text-xs text-gray-500">Sumber lowongan untuk tab Cari Loker. Gratis untuk pemakaian pribadi.</p>
-            </div>
-          </div>
-          <a href="https://developer.adzuna.com/" target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1 whitespace-nowrap">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs text-gray-500">Sumber lowongan untuk tab Cari Loker. Gratis untuk pemakaian pribadi.</p>
+          <a href="https://developer.adzuna.com/" target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1 whitespace-nowrap ml-4">
             Daftar & ambil key <ExternalLink size={10} />
           </a>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium text-gray-700 block mb-1">App ID</label>
             <input value={adzunaId} onChange={e => setAdzunaId(e.target.value)} autoComplete="off"
@@ -5496,33 +5831,230 @@ function SettingsTab({ configuredKeys, onSaved }: { configuredKeys: ConfiguredKe
           </div>
         </div>
         <div className="flex items-center justify-between mt-4">
-          <p className="text-xs text-gray-400 flex items-center gap-1">
-            <AlertCircle size={11} /> Kedua nilai dienkripsi sebelum disimpan.
-          </p>
+          <p className="text-xs text-gray-400 flex items-center gap-1"><AlertCircle size={11} /> Kedua nilai dienkripsi sebelum disimpan.</p>
           <div className="flex items-center gap-2">
-            {configuredKeys.adzuna && (
-              <button onClick={removeAdzuna} className="btn-secondary text-xs px-3 text-red-600">Hapus</button>
-            )}
+            {configuredKeys.adzuna && <button onClick={removeAdzuna} className="btn-secondary text-xs px-3 text-red-600">Hapus</button>}
             <button onClick={saveAdzuna} disabled={!adzunaId.trim() || !adzunaKey.trim()} className="btn-primary text-sm">
               {adzunaSaved ? '✓ Tersimpan!' : 'Simpan Adzuna'}
             </button>
           </div>
         </div>
       </div>
+    </div>
+  )
 
-      {/* One-time data import */}
-      <div className="card">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-            <Upload size={16} className="text-amber-600" />
+  if (settingsView === 'password') return (
+    <div className="max-w-2xl">
+      <SubHeader title={hasPassword ? 'Ganti Password' : 'Set Password'} />
+      <div className="card max-w-sm">
+        <p className="text-xs text-gray-500 mb-4">
+          {hasPassword ? 'Ubah password login akun email kamu.' : 'Tambahkan password agar bisa login tanpa Google.'}
+        </p>
+        <form onSubmit={handleChangePassword} className="space-y-3">
+          {hasPassword && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Password Saat Ini</label>
+              <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} required
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Password Baru</label>
+            <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} required minLength={8}
+              placeholder="Min. 8 karakter"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
           </div>
           <div>
-            <h2 className="font-semibold text-gray-900">Import data lama</h2>
-            <p className="text-xs text-gray-500">Pindahkan aplikasi, profile, dan key dari penyimpanan browser lama ke akun ini. Jalankan sekali saja.</p>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Konfirmasi Password Baru</label>
+            <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required minLength={8}
+              placeholder="Ulangi password baru"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
+          </div>
+          {pwError && <p className="text-xs text-red-500">{pwError}</p>}
+          {pwSuccess && <p className="text-xs text-emerald-600 font-medium">{pwSuccess}</p>}
+          <button type="submit" disabled={pwLoading} className="btn-primary text-sm disabled:opacity-60 disabled:cursor-not-allowed">
+            {pwLoading ? 'Menyimpan...' : hasPassword ? 'Ganti Password' : 'Set Password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+
+  if (settingsView === 'export') return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'exportTitle')} />
+      <div className="card space-y-4">
+        <p className="text-xs text-gray-500">{lang === 'en' ? 'Download all your job applications as a file.' : 'Download semua lamaranmu dalam satu file.'}</p>
+        <div className="flex gap-3 flex-wrap">
+          <a href="/api/export?format=json" download="applications.json" className="btn-secondary text-sm flex items-center gap-2">
+            <Download size={14} /> JSON
+          </a>
+          <a href="/api/export?format=csv" download="applications.csv" className="btn-secondary text-sm flex items-center gap-2">
+            <Download size={14} /> CSV
+          </a>
+        </div>
+        <p className="text-xs text-gray-400">{lang === 'en' ? 'CSV is compatible with Excel and Google Sheets.' : 'CSV bisa dibuka di Excel dan Google Sheets.'}</p>
+      </div>
+    </div>
+  )
+
+  if (settingsView === 'ai-model') return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'aiModelTitle')} />
+      <div className="card space-y-2">
+        <p className="text-xs text-gray-500 mb-3">{lang === 'en' ? 'Choose which AI provider to use for analysis and document generation.' : 'Pilih provider AI yang dipakai untuk analisis dan pembuatan dokumen.'}</p>
+        {([
+          { val: 'auto' as const, label: lang === 'en' ? 'Automatic' : 'Otomatis', desc: lang === 'en' ? 'Tries Gemini first, falls back to Groq automatically' : 'Coba Gemini dulu, otomatis fallback ke Groq' },
+          { val: 'gemini' as const, label: 'Gemini', desc: lang === 'en' ? 'Always use Google Gemini only' : 'Selalu gunakan Google Gemini saja' },
+          { val: 'groq' as const, label: 'Groq', desc: lang === 'en' ? 'Try Groq first, fall back to Gemini' : 'Coba Groq dulu, fallback ke Gemini' },
+        ]).map(opt => (
+          <button
+            key={opt.val}
+            onClick={() => handleSaveAiPref(opt.val)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left ${aiPref === opt.val ? 'border-primary bg-primary/5' : 'border-gray-100 hover:bg-gray-50'}`}
+          >
+            <div>
+              <p className="font-medium text-gray-900 text-sm">{opt.label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+            </div>
+            {aiPref === opt.val && <CheckCircle size={16} className="text-primary shrink-0" />}
+          </button>
+        ))}
+        {aiPrefSaved && <p className="text-xs text-emerald-600 font-medium">{lang === 'en' ? '✓ Saved' : '✓ Tersimpan'}</p>}
+      </div>
+    </div>
+  )
+
+  if (settingsView === 'mfa') return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'mfaTitle')} />
+      {mfaEnabled ? (
+        <div className="card max-w-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="badge-green text-xs">{lang === 'en' ? 'Enabled' : 'Aktif'}</span>
+            <p className="text-sm text-gray-600">{lang === 'en' ? '2FA is protecting your account.' : 'Akun kamu dilindungi 2FA.'}</p>
+          </div>
+          <form onSubmit={handleDisableMfa} className="space-y-3">
+            <p className="text-xs font-medium text-gray-700">{lang === 'en' ? 'To disable, enter your authenticator code:' : 'Untuk nonaktifkan, masukkan kode autentikator:'}</p>
+            {hasPassword && (
+              <input type="password" value={mfaDisablePw} onChange={e => setMfaDisablePw(e.target.value)} required
+                placeholder={lang === 'en' ? 'Current password' : 'Password saat ini'}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
+            )}
+            <input type="text" inputMode="numeric" maxLength={6} value={mfaDisableToken} onChange={e => setMfaDisableToken(e.target.value.replace(/\D/g, ''))} required
+              placeholder="000000"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono text-center outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 transition-all tracking-[0.3em]" />
+            {mfaError && <p className="text-xs text-red-500">{mfaError}</p>}
+            <button type="submit" disabled={mfaLoading} className="w-full py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-60">
+              {mfaLoading ? '...' : lang === 'en' ? 'Disable 2FA' : 'Nonaktifkan 2FA'}
+            </button>
+          </form>
+        </div>
+      ) : mfaSetupDone ? (
+        <div className="card max-w-sm text-center space-y-2">
+          <CheckCircle size={32} className="text-emerald-500 mx-auto" />
+          <p className="font-semibold text-gray-900">{lang === 'en' ? '2FA enabled!' : '2FA berhasil diaktifkan!'}</p>
+          <p className="text-xs text-gray-500">{lang === 'en' ? 'Your account is now protected.' : 'Akun kamu sekarang lebih aman.'}</p>
+        </div>
+      ) : mfaQr ? (
+        <div className="card max-w-sm space-y-4">
+          <p className="text-sm text-gray-600">{lang === 'en' ? 'Scan this QR code with Google Authenticator or Authy:' : 'Scan QR code ini dengan Google Authenticator atau Authy:'}</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={mfaQr} alt="QR Code" className="w-48 h-48 mx-auto rounded-xl border border-gray-100" />
+          <div>
+            <p className="text-xs text-gray-500 mb-1">{lang === 'en' ? 'Or enter this key manually:' : 'Atau masukkan key ini secara manual:'}</p>
+            <code className="text-xs font-mono bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 block text-center break-all">{mfaSecret}</code>
+          </div>
+          <form onSubmit={handleEnableMfa} className="space-y-3">
+            <input type="text" inputMode="numeric" maxLength={6} value={mfaToken} onChange={e => setMfaToken(e.target.value.replace(/\D/g, ''))} required
+              placeholder="000000"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all tracking-[0.3em]" />
+            {mfaError && <p className="text-xs text-red-500">{mfaError}</p>}
+            <button type="submit" disabled={mfaLoading || mfaToken.length < 6} className="btn-primary text-sm w-full disabled:opacity-60">
+              {mfaLoading ? '...' : lang === 'en' ? 'Verify & Enable' : 'Verifikasi & Aktifkan'}
+            </button>
+          </form>
+        </div>
+      ) : (
+        <div className="card max-w-sm space-y-3">
+          <p className="text-sm text-gray-600">{lang === 'en' ? 'Add an extra layer of security. You\'ll need an authenticator app like Google Authenticator or Authy.' : 'Tambah keamanan ekstra. Kamu butuh aplikasi autentikator seperti Google Authenticator atau Authy.'}</p>
+          {mfaError && <p className="text-xs text-red-500">{mfaError}</p>}
+          <button onClick={startMfaSetup} disabled={mfaLoading} className="btn-primary text-sm disabled:opacity-60">
+            {mfaLoading ? '...' : lang === 'en' ? 'Set up 2FA' : 'Aktifkan 2FA'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
+  if (settingsView === 'delete-account') return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'deleteAccountTitle')} />
+      <div className="card border border-red-100 max-w-sm space-y-4">
+        <p className="text-sm text-gray-600">{lang === 'en' ? 'This will permanently delete your account, all applications, API keys, and profile. This cannot be undone.' : 'Ini akan menghapus akun, semua lamaran, API key, dan profil secara permanen. Tidak bisa dibatalkan.'}</p>
+        <form onSubmit={handleDeleteAccount} className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">{lang === 'en' ? 'Type your email to confirm:' : 'Ketik email kamu untuk konfirmasi:'}</label>
+            <input type="email" value={deleteConfirmEmail} onChange={e => setDeleteConfirmEmail(e.target.value)} required
+              placeholder={lang === 'en' ? 'your@email.com' : 'email@kamu.com'}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 transition-all" />
+          </div>
+          {deleteError && <p className="text-xs text-red-500">{deleteError}</p>}
+          <button type="submit" className="w-full py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors">
+            {lang === 'en' ? 'Delete my account' : 'Hapus akun saya'}
+          </button>
+        </form>
+      </div>
+
+      {/* Confirmation modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 animate-slide-up">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">{lang === 'en' ? 'Delete account?' : 'Hapus akun?'}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{lang === 'en' ? 'This action cannot be undone.' : 'Tindakan ini tidak bisa dibatalkan.'}</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              {lang === 'en'
+                ? 'All your applications, API keys, and profile data will be permanently deleted. You will be signed out immediately.'
+                : 'Semua lamaran, API key, dan data profilmu akan dihapus selamanya. Kamu akan langsung keluar dari akun.'}
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleteLoading}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60"
+              >
+                {lang === 'en' ? 'Cancel' : 'Batal'}
+              </button>
+              <button
+                onClick={confirmDeleteAccount}
+                disabled={deleteLoading}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-60"
+              >
+                {deleteLoading ? (lang === 'en' ? 'Deleting...' : 'Menghapus...') : lang === 'en' ? 'Yes, delete' : 'Ya, hapus'}
+              </button>
+            </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="max-w-2xl">
+      <SubHeader title={t(lang, 'importTitle')} />
+      <div className="card">
+        <p className="text-xs text-gray-500 mb-4">{lang === 'en' ? 'Move applications, profile, and keys from old browser storage to this account. Run once.' : 'Pindahkan aplikasi, profile, dan key dari penyimpanan browser lama ke akun ini. Jalankan sekali saja.'}</p>
         <button onClick={importLocalData} disabled={importing} className="btn-secondary text-sm">
-          {importing ? 'Importing...' : 'Import dari browser ini'}
+          {importing ? (lang === 'en' ? 'Importing...' : 'Importing...') : lang === 'en' ? 'Import from this browser' : 'Import dari browser ini'}
         </button>
       </div>
     </div>

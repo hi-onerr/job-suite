@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../lib/db'
 import { getUserId } from '../../lib/session'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserKey } from '../../lib/keys'
 
 // POST /api/parse-profile — use Gemini to turn the user's raw CV text into a
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   }
 
   const groqKey = await getUserKey(userId, 'groq')
+  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   try {
     const prompt = `You are a precise CV/resume parser. Extract the candidate's information from the CV text below into a clean, structured JSON object. Preserve the original wording; do NOT invent data. If a field is unknown, omit it or use an empty array. Merge lines that were wrapped mid-sentence. Split skills/languages/certifications into individual items (strip category labels like "Tools & Systems").
@@ -60,7 +61,7 @@ Respond ONLY with valid JSON (no markdown, no backticks) in exactly this shape:
   "certifications": ["<certification>", "..."]
 }`
 
-    const { text: raw } = await generateTextWithProvider(genAI, prompt, groqKey)
+    const { text: raw } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
     const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)
 

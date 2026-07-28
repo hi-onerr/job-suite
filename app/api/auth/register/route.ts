@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/app/lib/db'
+import { validatePassword } from '@/app/lib/password'
+import { checkRateLimit } from '@/app/lib/ratelimit'
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_RE = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/
 
 export async function POST(req: Request) {
+  // C2 — rate limit by client IP: 5 attempts per 15 min
+  const ip = req.headers.get('x-forwarded-for') ?? 'unknown'
+  const { allowed } = await checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)
+  if (!allowed) {
+    return NextResponse.json({ error: 'Terlalu banyak percobaan, coba lagi nanti' }, { status: 429 })
+  }
+
   let body: unknown
   try { body = await req.json() } catch {
     return NextResponse.json({ error: 'Request tidak valid' }, { status: 400 })
@@ -21,13 +30,17 @@ export async function POST(req: Request) {
   if (!EMAIL_RE.test(email)) {
     return NextResponse.json({ error: 'Format email tidak valid' }, { status: 400 })
   }
-  if (password.length < 8) {
-    return NextResponse.json({ error: 'Password minimal 8 karakter' }, { status: 400 })
+
+  // M4 — password complexity validation (replaces simple length check)
+  const pwError = validatePassword(password)
+  if (pwError) {
+    return NextResponse.json({ error: pwError }, { status: 400 })
   }
 
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) {
-    return NextResponse.json({ error: 'Email sudah terdaftar' }, { status: 409 })
+    // M1 — don't reveal that the email is already registered (prevents enumeration)
+    return NextResponse.json({ success: true })
   }
 
   const hashed = await bcrypt.hash(password, 12)

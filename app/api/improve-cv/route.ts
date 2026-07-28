@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   const groqKey = await getUserKey(userId, 'groq')
+  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   // Truncate — full CV text slows the model significantly without adding value
   const profileTrimmed = profile.slice(0, 6000)
@@ -56,7 +57,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
 
 Rules: never fabricate roles, tools, or metrics. If a gap cannot be truthfully addressed, suggest how to reframe genuinely related experience instead. Use the job description's exact terminology where the candidate really has that experience. No em dashes.`
 
-    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey)
+    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
     console.log(`[improve-cv] done in ${Date.now() - t0}ms via ${provider}`)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)

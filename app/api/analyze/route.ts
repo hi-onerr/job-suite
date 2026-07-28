@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const groqKey = await getUserKey(userId, 'groq')
+  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   const isRescore = req.headers.get('x-rescore') === '1'
   const profileTrimmed = profile.slice(0, isRescore ? 8000 : 5000)
@@ -51,7 +52,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   "gaps": [<2-4 missing skills/experiences as strings>],
   "recommendation": "<2-3 sentence recommendation on whether to apply and how to position>",
   "keywordsToAdd": [<3-5 keywords missing from profile that are in job desc>]
-}`, groqKey),
+}`, groqKey, aiPref),
       isRescore ? Promise.resolve(null) : generateTextWithSearch(
         genAI,
         `What is the salary range for "${role || 'this role'}" at "${company || 'this company'}" in ${location} in 2024–2025? ` +

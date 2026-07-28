@@ -21,6 +21,9 @@ model User {
   password      String?             // null for OAuth-only users
   profileText   String? // was localStorage "user-profile"
   profileStructured String? // AI-parsed CV as JSON string (Gemini)
+  aiModelPref   String?  @default("auto") // "auto" | "gemini" | "groq"
+  twoFactorSecret   String?
+  twoFactorEnabled  Boolean  @default(false)
   accounts      Account[]
   sessions      Session[]
   apiKeys       ApiKey[]
@@ -97,4 +100,16 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model RateLimit {
+  id        String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+}
+
+model UsedOtp {
+  id        String   @id  // "{userId}:{code}:{windowTs}"
+  createdAt DateTime @default(now())
 }
