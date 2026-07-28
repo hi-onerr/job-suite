@@ -27,35 +27,48 @@ export async function PUT(req: NextRequest) {
   const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = (await req.json()) as Record<string, string>
-
-  for (const [provider, value] of Object.entries(body)) {
-    if (!VALID_PROVIDERS.has(provider)) continue
-    const trimmed = (value ?? '').trim()
-    const existing = await prisma.apiKey.findFirst({
-      where: { userId, provider },
-      select: { id: true },
-    })
-    if (!trimmed) {
-      if (existing) await prisma.apiKey.delete({ where: { id: existing.id } })
-      continue
-    }
-    const { ciphertext, iv, authTag } = encrypt(trimmed)
-    try {
-      if (existing) {
-        await prisma.apiKey.update({ where: { id: existing.id }, data: { ciphertext, iv, authTag } })
-      } else {
-        await prisma.apiKey.create({ data: { userId, provider, ciphertext, iv, authTag } })
-      }
-    } catch (e: any) {
-      // Concurrent save: unique constraint means the key was just created by another request; update it.
-      if (e?.code === 'P2002') {
-        const race = await prisma.apiKey.findFirst({ where: { userId, provider }, select: { id: true } })
-        if (race) await prisma.apiKey.update({ where: { id: race.id }, data: { ciphertext, iv, authTag } })
-      } else {
-        throw e
-      }
-    }
+  if (!process.env.ENCRYPTION_KEY) {
+    console.error('ENCRYPTION_KEY is not set')
+    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
+
+  let body: Record<string, string>
+  try { body = (await req.json()) as Record<string, string> } catch {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  }
+
+  try {
+    for (const [provider, value] of Object.entries(body)) {
+      if (!VALID_PROVIDERS.has(provider)) continue
+      const trimmed = (value ?? '').trim()
+      const existing = await prisma.apiKey.findFirst({
+        where: { userId, provider },
+        select: { id: true },
+      })
+      if (!trimmed) {
+        if (existing) await prisma.apiKey.delete({ where: { id: existing.id } })
+        continue
+      }
+      const { ciphertext, iv, authTag } = encrypt(trimmed)
+      try {
+        if (existing) {
+          await prisma.apiKey.update({ where: { id: existing.id }, data: { ciphertext, iv, authTag } })
+        } else {
+          await prisma.apiKey.create({ data: { userId, provider, ciphertext, iv, authTag } })
+        }
+      } catch (e: any) {
+        if (e?.code === 'P2002') {
+          const race = await prisma.apiKey.findFirst({ where: { userId, provider }, select: { id: true } })
+          if (race) await prisma.apiKey.update({ where: { id: race.id }, data: { ciphertext, iv, authTag } })
+        } else {
+          throw e
+        }
+      }
+    }
+  } catch (err) {
+    console.error('PUT /api/keys error:', err)
+    return NextResponse.json({ error: 'Gagal menyimpan API key' }, { status: 500 })
+  }
+
   return NextResponse.json({ ok: true })
 }
