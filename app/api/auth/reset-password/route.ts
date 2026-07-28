@@ -41,13 +41,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Link reset tidak valid atau sudah kadaluarsa' }, { status: 400 })
     }
 
-    // Cost factor 10 instead of 12 — still secure, ~4x faster on cold start
+    // Cost factor 10 — still secure, ~4x faster on cold start
     const hashed = await bcrypt.hash(password, 10)
 
-    await prisma.$transaction([
-      prisma.user.update({ where: { id: record.userId }, data: { password: hashed } }),
-      prisma.passwordReset.deleteMany({ where: { userId: record.userId } }),
-    ])
+    await prisma.user.update({ where: { id: record.userId }, data: { password: hashed } })
+    await prisma.passwordReset.deleteMany({ where: { userId: record.userId } })
 
     return NextResponse.json({ success: true })
   } catch (err) {
