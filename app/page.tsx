@@ -383,6 +383,7 @@ function SignInScreen() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [formEmail, setFormEmail] = useState('')
   const [formPassword, setFormPassword] = useState('')
+  const [formConfirmPassword, setFormConfirmPassword] = useState('')
   const [formName, setFormName] = useState('')
   const [authError, setAuthError] = useState('')
   const [authSuccess, setAuthSuccess] = useState('')
@@ -417,20 +418,23 @@ function SignInScreen() {
     e.preventDefault()
     setAuthError('')
     setAuthSuccess('')
+    if (!formName.trim()) { setAuthError('Nama wajib diisi'); return }
+    if (formPassword !== formConfirmPassword) { setAuthError('Password tidak cocok'); return }
     setAuthLoading(true)
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: formName, email: formEmail, password: formPassword }),
+      body: JSON.stringify({ name: formName.trim(), email: formEmail, password: formPassword }),
     })
     const data = await res.json()
     setAuthLoading(false)
     if (!res.ok) { setAuthError(data.error); return }
     setFormPassword('')
+    setFormConfirmPassword('')
     setFormName('')
     setAuthMode('login')
     setAuthSuccess('Akun berhasil dibuat! Silakan masuk.')
-  }, [formName, formEmail, formPassword])
+  }, [formName, formEmail, formPassword, formConfirmPassword])
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[1fr_420px]">
@@ -641,7 +645,7 @@ function SignInScreen() {
               ) : (
                 <>
                   {authMode === 'register' && (
-                    <input type="text" placeholder="Nama (opsional)" value={formName} onChange={e => setFormName(e.target.value)}
+                    <input type="text" placeholder="Nama lengkap" value={formName} onChange={e => setFormName(e.target.value)} required
                       className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
                       style={{ border: '1.5px solid #e2e8f0' }}
                       onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
@@ -652,11 +656,18 @@ function SignInScreen() {
                     style={{ border: '1.5px solid #e2e8f0' }}
                     onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
                     onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
-                  <input type="password" placeholder="Password (min. 8 karakter)" value={formPassword} onChange={e => setFormPassword(e.target.value)} required minLength={8}
+                  <input type="password" placeholder="Password (min. 8 karakter, huruf + angka/simbol)" value={formPassword} onChange={e => setFormPassword(e.target.value)} required minLength={8}
                     className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
                     style={{ border: '1.5px solid #e2e8f0' }}
                     onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
                     onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
+                  {authMode === 'register' && (
+                    <input type="password" placeholder="Konfirmasi password" value={formConfirmPassword} onChange={e => setFormConfirmPassword(e.target.value)} required minLength={8}
+                      className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none placeholder:text-gray-300 transition-all"
+                      style={{ border: '1.5px solid #e2e8f0' }}
+                      onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)' }}
+                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none' }} />
+                  )}
                 </>
               )}
               {authSuccess && <p className="text-xs text-emerald-600 font-medium">{authSuccess}</p>}
@@ -671,12 +682,12 @@ function SignInScreen() {
             <p className="text-xs text-center text-gray-400">
               {authMode === 'login' ? (
                 <>Belum punya akun?{' '}
-                  <button onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess('') }}
+                  <button onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess(''); setFormConfirmPassword('') }}
                     className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">Daftar</button>
                 </>
               ) : (
                 <>Sudah punya akun?{' '}
-                  <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess('') }}
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); setFormConfirmPassword('') }}
                     className="font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">Masuk</button>
                 </>
               )}

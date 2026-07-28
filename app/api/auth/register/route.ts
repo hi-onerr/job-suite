@@ -22,8 +22,11 @@ export async function POST(req: Request) {
   const b = body as Record<string, unknown>
   const email = String(b.email ?? '').trim().toLowerCase().slice(0, 254)
   const password = String(b.password ?? '').slice(0, 128)
-  const name = String(b.name ?? '').trim().slice(0, 100) || null
+  const name = String(b.name ?? '').trim().slice(0, 100)
 
+  if (!name) {
+    return NextResponse.json({ error: 'Nama wajib diisi' }, { status: 400 })
+  }
   if (!email || !password) {
     return NextResponse.json({ error: 'Email dan password wajib diisi' }, { status: 400 })
   }
@@ -45,7 +48,7 @@ export async function POST(req: Request) {
 
   const hashed = await bcrypt.hash(password, 12)
   await prisma.user.create({
-    data: { name, email, password: hashed },
+    data: { name: name || null, email, password: hashed },
   })
 
   return NextResponse.json({ success: true })
