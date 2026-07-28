@@ -25,6 +25,7 @@ const VALID_PROVIDERS = new Set(['gemini', 'groq'])
 // (not supported by the Neon HTTP adapter).
 export async function PUT(req: NextRequest) {
   const userId = await getUserId()
+  console.log('[PUT /api/keys] userId:', userId)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (!process.env.ENCRYPTION_KEY) {
@@ -65,9 +66,9 @@ export async function PUT(req: NextRequest) {
         }
       }
     }
-  } catch (err) {
-    console.error('PUT /api/keys error:', err)
-    return NextResponse.json({ error: 'Gagal menyimpan API key' }, { status: 500 })
+  } catch (err: any) {
+    console.error('PUT /api/keys error:', err?.message ?? err)
+    return NextResponse.json({ error: 'Gagal menyimpan API key: ' + (err?.message ?? 'unknown') }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })
