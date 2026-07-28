@@ -5444,6 +5444,7 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
   const { lang, setLang } = useLang()
   const [keys, setKeys] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [show, setShow] = useState<Record<string, boolean>>({})
   const [importing, setImporting] = useState(false)
   // Adzuna needs two values; stored server-side as a single "app_id:app_key" string.
@@ -5476,7 +5477,13 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
       if (val?.trim()) payload[id] = val.trim()
     }
     if (Object.keys(payload).length === 0) return
-    await fetch('/api/keys', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(payload) })
+    setSaveError('')
+    const res = await fetch('/api/keys', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(payload) })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setSaveError((data as any).error ?? 'Gagal menyimpan, coba lagi')
+      return
+    }
     setKeys({})
     setSaved(true)
     onSaved()
@@ -5854,7 +5861,8 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between mt-5">
+        {saveError && <p className="text-xs text-red-500 mt-3">{saveError}</p>}
+        <div className="flex items-center justify-between mt-3">
           <p className="text-xs text-gray-400 flex items-center gap-1">
             <AlertCircle size={11} /> Key dienkripsi (AES-256-GCM) sebelum disimpan.
           </p>
