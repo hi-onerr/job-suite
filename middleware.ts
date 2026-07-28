@@ -1,31 +1,28 @@
-import { auth } from './app/lib/auth'
+import { getToken } from 'next-auth/jwt'
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-export default auth((req) => {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
-  const session = req.auth
 
   // Public routes — always allow
-  if (
-    pathname.startsWith('/api/auth') ||
-    pathname === '/api/db-test'
-  ) {
+  if (pathname.startsWith('/api/auth') || pathname === '/api/db-test') {
     return NextResponse.next()
   }
 
   // Protected API routes
   if (pathname.startsWith('/api/')) {
-    if (!session?.user?.id) {
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET })
+    if (!token?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    // Block mfaPending sessions from all API routes except MFA verify
-    if ((session.user as { mfaPending?: boolean }).mfaPending && !pathname.startsWith('/api/auth/mfa/verify-session')) {
+    if (token.mfaPending && !pathname.startsWith('/api/auth/mfa/verify-session')) {
       return NextResponse.json({ error: 'MFA verification required' }, { status: 403 })
     }
   }
 
   return NextResponse.next()
-})
+}
 
 export const config = {
   matcher: ['/api/:path*'],
