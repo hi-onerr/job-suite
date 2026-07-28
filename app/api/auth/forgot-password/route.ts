@@ -2,11 +2,19 @@ import { NextResponse } from 'next/server'
 import { createHash, randomBytes } from 'crypto'
 import { prisma } from '@/app/lib/db'
 import { checkRateLimit } from '@/app/lib/ratelimit'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev'
 const EMAIL_RE = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/
+
+function createTransporter() {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+  })
+}
 
 export async function POST(req: Request) {
   try {
@@ -49,13 +57,14 @@ export async function POST(req: Request) {
     const resetUrl = `${origin}/reset-password?token=${token}`
     const displayName = user.name ?? 'Pengguna'
 
-    if (!process.env.RESEND_API_KEY) {
-      console.error('RESEND_API_KEY is not set')
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      console.error('GMAIL_USER or GMAIL_APP_PASSWORD is not set')
       return NextResponse.json({ error: 'Layanan email belum dikonfigurasi' }, { status: 500 })
     }
 
-    const { error: sendError } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const transporter = createTransporter()
+    await transporter.sendMail({
+      from: `"Job Application Suite" <${process.env.GMAIL_USER}>`,
       to: email,
       subject: 'Reset password Job Application Suite',
       html: `
@@ -85,11 +94,6 @@ export async function POST(req: Request) {
         </div>
       `,
     })
-
-    if (sendError) {
-      console.error('Resend error:', sendError)
-      return NextResponse.json({ error: 'Gagal mengirim email, coba lagi' }, { status: 500 })
-    }
 
     return NextResponse.json({ success: true })
   } catch (err) {
