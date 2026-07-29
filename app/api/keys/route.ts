@@ -25,7 +25,6 @@ const VALID_PROVIDERS = new Set(['gemini', 'groq'])
 // (not supported by the Neon HTTP adapter).
 export async function PUT(req: NextRequest) {
   const userId = await getUserId()
-  console.log('[PUT /api/keys] userId:', userId)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (!process.env.ENCRYPTION_KEY) {

@@ -103,7 +103,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user, account, trigger, session }) {
       const userId = (user as any)?.id ?? token.sub
-      console.log('[jwt cb] user?.id:', (user as any)?.id, '| token.sub:', token.sub, '| token.id:', token.id, '| account?.provider:', account?.provider)
       if (userId) {
         token.id = userId
         // Credentials already verifies MFA in authorize(). Only gate OAuth providers.
@@ -134,7 +133,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     session({ session, token }) {
       const resolvedId = (token?.id ?? token?.sub) as string | undefined
-      console.log('[session cb] token.id:', token?.id, '| token.sub:', token?.sub, '| resolvedId:', resolvedId, '| session.user:', !!session.user)
       if (session.user && resolvedId) {
         session.user.id = resolvedId
         session.user.mfaPending = !!(token.mfaPending)
