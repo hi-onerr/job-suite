@@ -12,8 +12,9 @@ export async function middleware(req: NextRequest) {
 
   // Protected API routes
   if (pathname.startsWith('/api/')) {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET })
-    console.log('[middleware] path:', pathname, '| token?.id:', token?.id, '| token?.sub:', token?.sub)
+    const secureCookie = req.nextUrl.protocol === 'https:'
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie })
+    console.log('[middleware] path:', pathname, '| secureCookie:', secureCookie, '| token?.id:', token?.id, '| token?.sub:', token?.sub)
     if (!token || !(token.id ?? token.sub)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
