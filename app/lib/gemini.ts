@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { NextRequest } from 'next/server'
 import { getUserId } from './session'
 import { getUserKey } from './keys'
+import { prisma } from './db'
 
 const KEY = process.env.GEMINI_API_KEY
 const PLACEHOLDERS = ['', 'PASTE_YOUR_KEY_HERE', 'your_gemini_api_key_here']
@@ -126,6 +127,16 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
   throw new Error('Groq: all models failed')
 }
 
+/** Read the user's stored AI model preference ('auto' | 'gemini' | 'groq'). */
+export async function getUserAiModelPref(userId: string): Promise<'auto' | 'gemini' | 'groq'> {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { aiModelPref: true } })
+    const pref = user?.aiModelPref
+    if (pref === 'gemini' || pref === 'groq') return pref
+  } catch { /* ignore — fall through to auto */ }
+  return 'auto'
+}
+
 /**
  * Run content (text and/or images) with resilience:
  *  - 404 (model retired) → skip to the next candidate model (permanent, no retry).
@@ -133,12 +144,26 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
  *  - 503 / 500 / "overloaded" (transient) → same retry behaviour as rate-limit.
  *  - 429 quota-exhausted (permanent) → skip models but do NOT retry across passes.
  *  - any other error → throw immediately.
+ *  preferredProvider: 'auto' = Gemini first + Groq fallback (default)
+ *                     'gemini' = Gemini only, skip Groq
+ *                     'groq' = try Groq first, fallback to Gemini
  */
 async function runWithFallback(
   genAI: GoogleGenerativeAI,
   parts: any[],
   groqKey?: string | null,
+  preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto',
 ): Promise<{ text: string; provider: 'gemini' | 'groq' }> {
+  // When user prefers Groq and a text-only prompt is available, try Groq first.
+  if (preferredProvider === 'groq' && groqKey) {
+    const textPart = parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : null
+    if (textPart) {
+      try {
+        const text = await tryGroqFallback(groqKey, textPart)
+        return { text, provider: 'groq' }
+      } catch { /* fall through to Gemini */ }
+    }
+  }
   let lastErr: any
   let hadTransientError = false
   // Retry delays for transient errors (rate-limit / overload).
@@ -179,8 +204,9 @@ async function runWithFallback(
   // Text-only prompts only (Groq has no vision API). Triggered when Gemini is
   // unavailable for any reason (transient rate-limit, overload, or quota exhaustion).
   // hadTransientError guards the case where lastErr is a 404 that overwrote an earlier 429.
+  // Skipped when user explicitly prefers Gemini-only.
   let triedGroq = false
-  if (groqKey && (hadTransientError || isOverloadError(lastErr) || isRateLimitError(lastErr) || isQuotaError(lastErr))) {
+  if (preferredProvider !== 'gemini' && groqKey && (hadTransientError || isOverloadError(lastErr) || isRateLimitError(lastErr) || isQuotaError(lastErr))) {
     const textPart = parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : null
     if (textPart) {
       triedGroq = true
@@ -227,8 +253,8 @@ async function runWithFallback(
 }
 
 /** Run a text prompt, with Gemini model fallback + optional Groq backup. */
-export function generateText(genAI: GoogleGenerativeAI, prompt: string, groqKey?: string | null): Promise<string> {
-  return runWithFallback(genAI, [prompt], groqKey).then(r => r.text)
+export function generateText(genAI: GoogleGenerativeAI, prompt: string, groqKey?: string | null, preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto'): Promise<string> {
+  return runWithFallback(genAI, [prompt], groqKey, preferredProvider).then(r => r.text)
 }
 
 /** Like generateText but also returns which provider served the request. */
@@ -236,8 +262,9 @@ export function generateTextWithProvider(
   genAI: GoogleGenerativeAI,
   prompt: string,
   groqKey?: string | null,
+  preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto',
 ): Promise<{ text: string; provider: 'gemini' | 'groq' }> {
-  return runWithFallback(genAI, [prompt], groqKey)
+  return runWithFallback(genAI, [prompt], groqKey, preferredProvider)
 }
 
 export interface TokenUsage {
@@ -252,7 +279,15 @@ export async function generateTextWithUsage(
   genAI: GoogleGenerativeAI,
   prompt: string,
   groqKey?: string | null,
+  preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto',
 ): Promise<{ text: string; usage: TokenUsage | null; provider: 'gemini' | 'groq' }> {
+  // Groq-first when user prefers it
+  if (preferredProvider === 'groq' && groqKey) {
+    try {
+      const text = await tryGroqFallback(groqKey, prompt)
+      return { text, usage: null, provider: 'groq' as const }
+    } catch { /* fall through to Gemini */ }
+  }
   let lastErr: any
   let hadTransientError = false
   const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
@@ -294,7 +329,7 @@ export async function generateTextWithUsage(
   }
   // ── Try Groq fallback ────────────────────────────────────────────────────────
   let triedGroq = false
-  if (groqKey && (hadTransientError || isOverloadError(lastErr) || isRateLimitError(lastErr) || isQuotaError(lastErr))) {
+  if (preferredProvider !== 'gemini' && groqKey && (hadTransientError || isOverloadError(lastErr) || isRateLimitError(lastErr) || isQuotaError(lastErr))) {
     triedGroq = true
     try {
       console.log('[groq] Gemini unavailable — trying Groq fallback (usage=null)')

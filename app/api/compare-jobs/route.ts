@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider,
+  getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref,
   isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE,
   isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE,
 } from '../../lib/gemini'
@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
   if (!genAI) return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
 
   const groqKey = await getUserKey(userId, 'groq')
+  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   // ── Fetch all job pages concurrently ────────────────────────────────────────
   const fetched = await Promise.all(validUrls.map(fetchJobData))
@@ -140,7 +141,7 @@ Respond ONLY with a valid JSON array (no markdown, no backticks), sorted by scor
 ]`
 
   try {
-    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey)
+    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const rankings: any[] = JSON.parse(cleaned)
 

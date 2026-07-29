@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const groqKey = await getUserKey(userId, 'groq')
+  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   try {
     // ── Detect international job location ─────────────────────────────────────
@@ -245,7 +246,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   ]
 }`
 
-    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey)
+    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
 
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)

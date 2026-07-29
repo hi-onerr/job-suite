@@ -18,13 +18,18 @@ model User {
   email         String        @unique
   emailVerified DateTime?
   image         String?
+  password      String?             // null for OAuth-only users
   profileText   String? // was localStorage "user-profile"
   profileStructured String? // AI-parsed CV as JSON string (Gemini)
-  accounts      Account[]
-  sessions      Session[]
-  apiKeys       ApiKey[]
-  applications  Application[]
-  createdAt     DateTime      @default(now())
+  aiModelPref   String?  @default("auto") // "auto" | "gemini" | "groq"
+  twoFactorSecret   String?
+  twoFactorEnabled  Boolean  @default(false)
+  accounts        Account[]
+  sessions        Session[]
+  apiKeys         ApiKey[]
+  applications    Application[]
+  passwordResets  PasswordReset[]
+  createdAt       DateTime      @default(now())
 }
 
 model ApiKey {
@@ -96,4 +101,25 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model RateLimit {
+  id        String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+}
+
+model UsedOtp {
+  id        String   @id  // "{userId}:{code}:{windowTs}"
+  createdAt DateTime @default(now())
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
