@@ -13,7 +13,8 @@ export async function middleware(req: NextRequest) {
   // Protected API routes
   if (pathname.startsWith('/api/')) {
     const token = await getToken({ req, secret: process.env.AUTH_SECRET })
-    if (!token?.id) {
+    console.log('[middleware] path:', pathname, '| token?.id:', token?.id, '| token?.sub:', token?.sub)
+    if (!token || !(token.id ?? token.sub)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (token.mfaPending && !pathname.startsWith('/api/auth/mfa/verify-session')) {

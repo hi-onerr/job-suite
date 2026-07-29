@@ -102,13 +102,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     async jwt({ token, user, account, trigger, session }) {
-      if (user?.id) {
-        token.id = user.id
+      const userId = (user as any)?.id ?? token.sub
+      console.log('[jwt cb] user?.id:', (user as any)?.id, '| token.sub:', token.sub, '| token.id:', token.id, '| account?.provider:', account?.provider)
+      if (userId) {
+        token.id = userId
         // Credentials already verifies MFA in authorize(). Only gate OAuth providers.
         if (account?.provider && account.provider !== 'credentials') {
           try {
             const dbUser = await prisma.user.findUnique({
-              where: { id: user.id },
+              where: { id: userId },
               select: { twoFactorEnabled: true },
             })
             if (dbUser?.twoFactorEnabled) token.mfaPending = true
@@ -120,7 +122,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Client calls useSession().update({ mfaToken }) after TOTP verified.
       // H4 — each nonce can only be used once (single-use step-up token)
       if (trigger === 'update' && typeof session?.mfaToken === 'string') {
-        const nonce = verifyMfaToken(session.mfaToken, token.id as string)
+        const nonce = verifyMfaToken(session.mfaToken, (token.id ?? token.sub) as string)
         if (nonce) {
           const firstUse = await markOtpUsed('mfa', nonce, 0)
           if (firstUse) {
@@ -131,8 +133,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token
     },
     session({ session, token }) {
-      if (session.user && token?.id) {
-        session.user.id = token.id as string
+      const resolvedId = (token?.id ?? token?.sub) as string | undefined
+      console.log('[session cb] token.id:', token?.id, '| token.sub:', token?.sub, '| resolvedId:', resolvedId, '| session.user:', !!session.user)
+      if (session.user && resolvedId) {
+        session.user.id = resolvedId
         session.user.mfaPending = !!(token.mfaPending)
       }
       return session
