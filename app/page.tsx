@@ -5113,7 +5113,8 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
   const [text, setText] = useState(profile)
   const [saved, setSaved] = useState(false)
   const [parsing, setParsing] = useState(false)
-  const [aiParsing, setAiParsing] = useState(false)
+  // Start in parsing state if profile exists but no AI data — avoids heuristic flash on mount
+  const [aiParsing, setAiParsing] = useState(!structured && !!hasGeminiKey && !!profile)
   const [mode, setMode] = useState<'view' | 'edit'>(profile ? 'view' : 'edit')
   const [phoneInput, setPhoneInput] = useState('')
   const triedRef = useRef(false)
