@@ -5220,6 +5220,7 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
     onSave(saveText)
     setSaved(true)
     setMode('view')
+    if (hasGeminiKey) setAiParsing(true) // batch with mode change so skeleton shows immediately
     triedRef.current = true
     if (hasGeminiKey) parseWithAI(saveText)
     setTimeout(() => setSaved(false), 2000)
@@ -5378,8 +5379,8 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
             AI sedang menyusun profil kamu…
           </p>
         </div>
-      ) : mode === 'view' && !structured && !cv.hasSections ? (
-        // Loading skeleton — no structured data yet (AI parsing in progress or not yet triggered)
+      ) : mode === 'view' && aiParsing ? (
+        // Always show skeleton while AI is parsing — prevents raw text flash
         <div className="space-y-4">
           {[1,2,3].map(i => (
             <div key={i} className="card space-y-3 animate-pulse">
@@ -5393,7 +5394,7 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
           ))}
           <p className="text-xs text-primary font-medium flex items-center gap-1.5 px-1">
             <span className="animate-spin w-3 h-3 border-2 border-primary border-t-transparent rounded-full" />
-            {aiParsing ? 'AI sedang menyusun profil kamu…' : 'Memuat profil…'}
+            AI sedang menyusun profil kamu…
           </p>
         </div>
       ) : mode === 'view' ? (
