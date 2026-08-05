@@ -51,7 +51,8 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   "strengths": [<3-5 specific matching skills/experiences as strings>],
   "gaps": [<2-4 missing skills/experiences as strings>],
   "recommendation": "<2-3 sentence recommendation on whether to apply and how to position>",
-  "keywordsToAdd": [<3-5 keywords missing from profile that are in job desc>]
+  "keywordsToAdd": [<3-5 keywords missing from profile that are in job desc>],
+  "detectedSectors": [<1-3 sector tags that best describe this job, pick from: finance, banking, investment, risk, consulting, strategy, advisory, supply-chain, logistics, procurement, operations, technology, software, data, healthcare, retail, manufacturing, hr, marketing, legal, accounting>]
 }`, groqKey, aiPref),
       isRescore ? Promise.resolve(null) : generateTextWithSearch(
         genAI,

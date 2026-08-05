@@ -28,6 +28,7 @@ model User {
   sessions        Session[]
   apiKeys         ApiKey[]
   applications    Application[]
+  cvVersions      CvVersion[]
   passwordResets  PasswordReset[]
   createdAt       DateTime      @default(now())
 }
@@ -45,24 +46,40 @@ model ApiKey {
 }
 
 model Application {
-  id          String   @id @default(cuid())
-  userId      String
-  company     String
-  role        String
-  location    String?
-  url         String?
-  jobDesc     String
-  status      String   @default("saved") // saved|applied|interview|offer|rejected
-  matchScore  Int      @default(0)
-  analysis    String? // AI analysis JSON (strengths, gaps, recommendation, salaryRange)
-  documents   String? // generated docs JSON: [{ type, content, createdAt }] (latest per type)
-  prep        String? // cached interview-prep JSON (company overview, salary, questions)
-  appliedDate String?
-  deadline    String?
-  notes       String?
-  salary      String?
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  userId        String
+  company       String
+  role          String
+  location      String?
+  url           String?
+  jobDesc       String
+  status        String   @default("saved") // saved|applied|interview|offer|rejected
+  matchScore    Int      @default(0)
+  analysis      String? // AI analysis JSON (strengths, gaps, recommendation, salaryRange)
+  documents     String? // generated docs JSON: [{ type, content, createdAt }] (latest per type)
+  prep          String? // cached interview-prep JSON (company overview, salary, questions)
+  appliedDate   String?
+  deadline      String?
+  notes         String?
+  salary        String?
+  cvVersionId   String? // which CvVersion was used to generate docs for this application
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model CvVersion {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String   // e.g. "Banking CV", "Supply Chain CV"
+  sectors           String   @default("[]") // JSON string: ["finance","banking","risk"]
+  profileText       String
+  profileStructured String?  // AI-parsed JSON, populated on demand
+  isDefault         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
