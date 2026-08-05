@@ -33,9 +33,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'name and profileText are required' }, { status: 400 })
   }
 
-  // If this is being set as default, clear other defaults first
+  // Use raw SQL to avoid updateMany triggering a transaction (not supported in Neon HTTP mode)
   if (isDefault) {
-    await prisma.cvVersion.updateMany({ where: { userId }, data: { isDefault: false } })
+    await prisma.$executeRaw`UPDATE "CvVersion" SET "isDefault" = false WHERE "userId" = ${userId}`
   }
 
   const version = await prisma.cvVersion.create({

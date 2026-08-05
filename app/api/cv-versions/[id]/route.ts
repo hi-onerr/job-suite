@@ -16,9 +16,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   const { name, sectors, profileText, isDefault } = await req.json()
 
-  // If setting as default, clear others first
+  // Use raw SQL to avoid updateMany triggering a transaction (not supported in Neon HTTP mode)
   if (isDefault) {
-    await prisma.cvVersion.updateMany({ where: { userId, id: { not: params.id } }, data: { isDefault: false } })
+    await prisma.$executeRaw`UPDATE "CvVersion" SET "isDefault" = false WHERE "userId" = ${userId} AND "id" != ${params.id}`
   }
 
   const updated = await prisma.cvVersion.update({
