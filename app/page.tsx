@@ -155,7 +155,18 @@ interface AnalysisResult {
   salaryRange?: string
   _salarySource?: string | null
   keywordsToAdd?: string[]
+  detectedSectors?: string[]
   _provider?: 'gemini' | 'groq'
+}
+
+interface CvVersion {
+  id: string
+  name: string
+  sectors: string[]
+  profileText: string
+  profileStructured?: string | null
+  isDefault: boolean
+  createdAt: string
 }
 
 interface CvImprovement {
@@ -795,6 +806,7 @@ function AppShell() {
   const [profileStructured, setProfileStructured] = useState<any>(null)
   const [configuredKeys, setConfiguredKeys] = useState<ConfiguredKeys>({})
   const [keysLoaded, setKeysLoaded] = useState(false)
+  const [cvVersions, setCvVersions] = useState<CvVersion[]>([])
   const [loading, setLoading] = useState(true)
   const [dark, setDark] = useState(false)
   const [lang, setLangState] = useState<Lang>('id')
@@ -858,10 +870,11 @@ function AppShell() {
     let cancelled = false
     ;(async () => {
       try {
-        const [jobsRes, profileRes, keysRes] = await Promise.all([
+        const [jobsRes, profileRes, keysRes, cvVersionsRes] = await Promise.all([
           fetch('/api/applications'),
           fetch('/api/profile'),
           fetch('/api/keys'),
+          fetch('/api/cv-versions'),
         ])
         if (cancelled) return
         if (jobsRes.ok) setJobs(await jobsRes.json())
@@ -871,6 +884,7 @@ function AppShell() {
           setProfileStructured(p.structured || null)
         }
         if (keysRes.ok) setConfiguredKeys((await keysRes.json()).configured || {})
+        if (cvVersionsRes.ok) { const d = await cvVersionsRes.json(); setCvVersions(d.versions || []) }
         setKeysLoaded(true)
       } finally {
         if (!cancelled) setLoading(false)
@@ -883,6 +897,28 @@ function AppShell() {
     setProfile(text)
     setProfileStructured(null) // server clears its cache too; will re-parse with AI
     await fetch('/api/profile', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ profile: text }) })
+  }
+
+  const createCvVersion = async (v: Omit<CvVersion, 'id' | 'createdAt' | 'profileStructured'>) => {
+    const res = await fetch('/api/cv-versions', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(v) })
+    if (res.ok) { const d = await res.json(); setCvVersions(prev => [...prev, d.version]) }
+    else { const d = await res.json().catch(() => ({})); showError(d.error || 'Gagal menyimpan versi CV.') }
+  }
+
+  const updateCvVersion = async (id: string, v: Partial<CvVersion>) => {
+    const res = await fetch(`/api/cv-versions/${id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(v) })
+    if (res.ok) {
+      const d = await res.json()
+      setCvVersions(prev => {
+        const updated = prev.map(x => x.id === id ? d.version : (v.isDefault ? { ...x, isDefault: false } : x))
+        return updated
+      })
+    } else { const d = await res.json().catch(() => ({})); showError(d.error || 'Gagal mengupdate versi CV.') }
+  }
+
+  const deleteCvVersion = async (id: string) => {
+    await fetch(`/api/cv-versions/${id}`, { method: 'DELETE' })
+    setCvVersions(prev => prev.filter(x => x.id !== id))
   }
 
   const addJob = async (job: Partial<JobApplication>): Promise<JobApplication | null> => {
@@ -1112,7 +1148,7 @@ function AppShell() {
                 <BestFitTab profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onJobAdded={addJob} onGoToSettings={() => setActiveTab('settings')} onGoToProfile={() => setActiveTab('profile')} />
               )}
               {activeTab === 'analyze' && (
-                <AnalyzeTab onJobAdded={addJob} onUpdateJob={updateJob} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
+                <AnalyzeTab onJobAdded={addJob} onUpdateJob={updateJob} profile={profile} configuredKeys={configuredKeys} keysLoaded={keysLoaded} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} cvVersions={cvVersions} />
               )}
               {activeTab === 'prep' && (
                 <PrepTab jobs={jobs} profile={profile} configuredKeys={configuredKeys} onUpdateJob={updateJob} onGoToProfile={() => setActiveTab('profile')} onGoToSettings={() => setActiveTab('settings')} />
@@ -1125,6 +1161,10 @@ function AppShell() {
                   onStructured={setProfileStructured}
                   hasGeminiKey={!!configuredKeys.gemini}
                   onGoToSettings={() => setActiveTab('settings')}
+                  cvVersions={cvVersions}
+                  onCreateCvVersion={createCvVersion}
+                  onUpdateCvVersion={updateCvVersion}
+                  onDeleteCvVersion={deleteCvVersion}
                 />
               )}
               {activeTab === 'worldclock' && <WorldClockTab />}
@@ -2880,7 +2920,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
 }
 
 // ── ANALYZE TAB ──────────────────────────────────────────────────────────────
-function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoaded, onGoToProfile, onGoToSettings }: { onJobAdded: (job: Partial<JobApplication>) => Promise<JobApplication | null>; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; profile: string; configuredKeys: ConfiguredKeys; keysLoaded: boolean; onGoToProfile: () => void; onGoToSettings: () => void }) {
+function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoaded, onGoToProfile, onGoToSettings, cvVersions = [] }: { onJobAdded: (job: Partial<JobApplication>) => Promise<JobApplication | null>; onUpdateJob: (id: string, updates: Partial<JobApplication>) => void; profile: string; configuredKeys: ConfiguredKeys; keysLoaded: boolean; onGoToProfile: () => void; onGoToSettings: () => void; cvVersions?: CvVersion[] }) {
   const hasGeminiKey = !!configuredKeys.gemini
   const [url, setUrl] = useState('')
   const [jobDesc, setJobDesc] = useState('')
@@ -2893,7 +2933,11 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [docs, setDocs] = useState<AppDocument[]>([])  // generated docs for this job
   const [savedJobId, setSavedJobId] = useState<string | null>(null)  // history entry for this job
+  const [selectedCvVersion, setSelectedCvVersion] = useState<CvVersion | null>(null)
   const imgInputRef = useRef<HTMLInputElement>(null)
+
+  // Effective profile: use selected CV version if available, otherwise fall back to the user's main profile
+  const effectiveProfile = selectedCvVersion?.profileText || profile
 
   // Create or update this job's history entry in the tracker (auto-save).
   const persist = async (matchScore: number, analysis: AnalysisResult | null) => {
@@ -2981,7 +3025,7 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: JSON_HEADERS,
-        body: JSON.stringify({ jobDesc, profile, company, role })
+        body: JSON.stringify({ jobDesc, profile: effectiveProfile, company, role })
       })
       const data = await res.json()
       if (!res.ok) {
@@ -2994,6 +3038,18 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
         return
       }
       setResult(data)
+      // Auto-select the best matching CV version based on detected sectors
+      if (cvVersions.length > 0) {
+        const sectors: string[] = data.detectedSectors || []
+        let best: CvVersion | null = null
+        let bestScore = -1
+        for (const v of cvVersions) {
+          const overlap = v.sectors.filter((s: string) => sectors.includes(s)).length
+          if (overlap > bestScore) { bestScore = overlap; best = v }
+        }
+        if (!best || bestScore === 0) best = cvVersions.find(v => v.isDefault) || cvVersions[0]
+        setSelectedCvVersion(best)
+      }
       // Auto-save to history (Job Tracker) — fire-and-forget, don't block UI.
       persist(data.score || 0, {
         strengths: data.strengths, gaps: data.gaps,
@@ -3220,13 +3276,53 @@ function AnalyzeTab({ onJobAdded, onUpdateJob, profile, configuredKeys, keysLoad
           </div>
         )}
 
+        {/* CV Version selector — shown when user has versions and has analyzed a job */}
+        {cvVersions.length > 0 && result && (
+          <div className="card border-primary/20 bg-primary/5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+                  <FileText size={13} className="text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-700">
+                    CV yang digunakan
+                    {result.detectedSectors && result.detectedSectors.length > 0 && (
+                      <span className="ml-1.5 font-normal text-gray-400">
+                        · Terdeteksi: {result.detectedSectors.slice(0, 3).join(', ')}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-primary font-medium truncate">
+                    {selectedCvVersion ? selectedCvVersion.name : 'Profil Utama'}
+                    {selectedCvVersion && ' (auto-selected)'}
+                  </p>
+                </div>
+              </div>
+              <select
+                value={selectedCvVersion?.id || ''}
+                onChange={e => {
+                  const v = cvVersions.find(x => x.id === e.target.value) || null
+                  setSelectedCvVersion(v)
+                }}
+                className="text-xs border border-primary/30 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
+              >
+                <option value="">Profil Utama</option>
+                {cvVersions.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}{v.isDefault ? ' ★' : ''}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Generate Buttons */}
         <DocumentGenerator
           jobDesc={jobDesc}
           company={company}
           role={role}
           location={location}
-          profile={profile}
+          profile={effectiveProfile}
           savedDocs={docs}
           onSaveDocs={handleSaveDocs}
           analysis={result}
@@ -5002,13 +5098,17 @@ function ProfileBlock({ icon, title, action, children, className = '' }: { icon:
   )
 }
 
-function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, onGoToSettings }: {
+function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, onGoToSettings, cvVersions = [], onCreateCvVersion, onUpdateCvVersion, onDeleteCvVersion }: {
   profile: string
   onSave: (text: string) => void
   structured: StructuredProfile | null
   onStructured: (s: StructuredProfile | null) => void
   hasGeminiKey: boolean
   onGoToSettings: () => void
+  cvVersions?: CvVersion[]
+  onCreateCvVersion?: (v: Omit<CvVersion, 'id' | 'createdAt' | 'profileStructured'>) => Promise<void>
+  onUpdateCvVersion?: (id: string, v: Partial<CvVersion>) => Promise<void>
+  onDeleteCvVersion?: (id: string) => Promise<void>
 }) {
   const [text, setText] = useState(profile)
   const [saved, setSaved] = useState(false)
@@ -5017,6 +5117,46 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
   const [mode, setMode] = useState<'view' | 'edit'>(profile ? 'view' : 'edit')
   const [phoneInput, setPhoneInput] = useState('')
   const triedRef = useRef(false)
+
+  // CV Versions modal state
+  const [cvVersionModal, setCvVersionModal] = useState<{ open: boolean; editing: CvVersion | null }>({ open: false, editing: null })
+  const [cvvName, setCvvName] = useState('')
+  const [cvvSectors, setCvvSectors] = useState<string[]>([])
+  const [cvvSectorInput, setCvvSectorInput] = useState('')
+  const [cvvText, setCvvText] = useState('')
+  const [cvvDefault, setCvvDefault] = useState(false)
+  const [cvvSaving, setCvvSaving] = useState(false)
+
+  const openNewCvVersion = () => {
+    setCvvName(''); setCvvSectors([]); setCvvSectorInput(''); setCvvText(profile); setCvvDefault(cvVersions.length === 0)
+    setCvVersionModal({ open: true, editing: null })
+  }
+
+  const openEditCvVersion = (v: CvVersion) => {
+    setCvvName(v.name); setCvvSectors(v.sectors); setCvvSectorInput(''); setCvvText(v.profileText); setCvvDefault(v.isDefault)
+    setCvVersionModal({ open: true, editing: v })
+  }
+
+  const saveCvVersion = async () => {
+    if (!cvvName.trim() || !cvvText.trim()) return
+    setCvvSaving(true)
+    try {
+      if (cvVersionModal.editing) {
+        await onUpdateCvVersion?.(cvVersionModal.editing.id, { name: cvvName, sectors: cvvSectors, profileText: cvvText, isDefault: cvvDefault })
+      } else {
+        await onCreateCvVersion?.({ name: cvvName, sectors: cvvSectors, profileText: cvvText, isDefault: cvvDefault })
+      }
+      setCvVersionModal({ open: false, editing: null })
+    } finally {
+      setCvvSaving(false)
+    }
+  }
+
+  const addSectorTag = () => {
+    const tag = cvvSectorInput.trim().toLowerCase().replace(/\s+/g, '-')
+    if (tag && !cvvSectors.includes(tag)) setCvvSectors(prev => [...prev, tag])
+    setCvvSectorInput('')
+  }
 
   // Ask Gemini to structure the CV. With no arg it parses the stored profile.
   const parseWithAI = useCallback(async (body?: string) => {
@@ -5426,6 +5566,141 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
               ) : (
                 <p className="text-xs text-gray-600">Semua bagian penting sudah ada. AI bisa memberi hasil paling akurat dengan profil selengkap ini.</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CV VERSIONS SECTION ─────────────────────────────────────────── */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <FileText size={16} className="text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Versi CV</h3>
+              <p className="text-xs text-gray-400">CV berbeda untuk sektor berbeda — AI otomatis pilih yang paling cocok</p>
+            </div>
+          </div>
+          <button onClick={openNewCvVersion} className="btn-primary text-xs flex items-center gap-1.5">
+            <Plus size={13} /> Buat Baru
+          </button>
+        </div>
+
+        {cvVersions.length === 0 ? (
+          <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
+            <FileText size={28} className="mx-auto text-gray-300 mb-2" />
+            <p className="text-sm font-medium text-gray-500">Belum ada versi CV</p>
+            <p className="text-xs text-gray-400 mt-1">Buat versi terpisah untuk Banking, Supply Chain, Consulting, dll.</p>
+            <button onClick={openNewCvVersion} className="mt-3 btn-primary text-xs">
+              + Buat Versi Pertama
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {cvVersions.map(v => (
+              <div key={v.id} className={`rounded-xl border-2 p-4 transition-all ${v.isDefault ? 'border-primary bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {v.isDefault && <Star size={12} className="text-primary shrink-0" fill="currentColor" />}
+                    <p className="font-semibold text-gray-900 text-sm truncate">{v.name}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0 ml-1">
+                    <button onClick={() => openEditCvVersion(v)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                      <Pencil size={12} />
+                    </button>
+                    <button onClick={() => { if (confirm(`Hapus "${v.name}"?`)) onDeleteCvVersion?.(v.id) }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+                {v.sectors.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {v.sectors.map(s => (
+                      <span key={s} className="text-[10px] bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full">{s}</span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-400">{v.profileText.length} karakter</p>
+                {!v.isDefault && (
+                  <button onClick={() => onUpdateCvVersion?.(v.id, { isDefault: true })} className="mt-2 text-xs text-primary hover:underline">
+                    Jadikan default
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* CV Version create/edit modal */}
+      {cvVersionModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold text-gray-900">{cvVersionModal.editing ? 'Edit Versi CV' : 'Buat Versi CV Baru'}</h3>
+              <button onClick={() => setCvVersionModal({ open: false, editing: null })} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Nama Versi *</label>
+                <input value={cvvName} onChange={e => setCvvName(e.target.value)} placeholder="e.g. Banking CV, Supply Chain CV" className="input text-sm w-full" />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Sektor Tags</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {cvvSectors.map(s => (
+                    <span key={s} className="inline-flex items-center gap-1 text-xs bg-teal-50 text-teal-700 px-2.5 py-1 rounded-full">
+                      {s}
+                      <button onClick={() => setCvvSectors(prev => prev.filter(x => x !== s))} className="hover:text-teal-900">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={cvvSectorInput}
+                    onChange={e => setCvvSectorInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSectorTag() } }}
+                    placeholder="e.g. finance, banking, risk — Enter untuk tambah"
+                    className="input text-sm flex-1"
+                  />
+                  <button onClick={addSectorTag} className="btn-secondary text-sm px-3">+</button>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">AI akan cocokkan sektor ini dengan loker untuk auto-select versi CV yang tepat</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">CV Text *</label>
+                <textarea
+                  value={cvvText}
+                  onChange={e => setCvvText(e.target.value)}
+                  placeholder="Paste isi CV untuk versi ini..."
+                  rows={10}
+                  className="textarea text-sm font-mono w-full"
+                />
+                <p className="text-xs text-gray-400 mt-1">{cvvText.length} karakter</p>
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={cvvDefault} onChange={e => setCvvDefault(e.target.checked)} className="rounded" />
+                <span className="text-sm text-gray-700">Jadikan versi default</span>
+              </label>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button onClick={() => setCvVersionModal({ open: false, editing: null })} className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:border-gray-300 transition-all">
+                Batal
+              </button>
+              <button onClick={saveCvVersion} disabled={!cvvName.trim() || !cvvText.trim() || cvvSaving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary/90 transition-all disabled:opacity-50">
+                {cvvSaving ? 'Menyimpan...' : cvVersionModal.editing ? 'Simpan Perubahan' : 'Buat Versi'}
+              </button>
             </div>
           </div>
         </div>
