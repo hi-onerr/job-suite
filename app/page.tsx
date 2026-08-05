@@ -5378,6 +5378,24 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
             AI sedang menyusun profil kamu…
           </p>
         </div>
+      ) : mode === 'view' && !structured && !cv.hasSections ? (
+        // Loading skeleton — no structured data yet (AI parsing in progress or not yet triggered)
+        <div className="space-y-4">
+          {[1,2,3].map(i => (
+            <div key={i} className="card space-y-3 animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-1/4" />
+              <div className="space-y-2">
+                <div className="h-3 bg-gray-100 rounded w-full" />
+                <div className="h-3 bg-gray-100 rounded w-5/6" />
+                <div className="h-3 bg-gray-100 rounded w-4/6" />
+              </div>
+            </div>
+          ))}
+          <p className="text-xs text-primary font-medium flex items-center gap-1.5 px-1">
+            <span className="animate-spin w-3 h-3 border-2 border-primary border-t-transparent rounded-full" />
+            {aiParsing ? 'AI sedang menyusun profil kamu…' : 'Memuat profil…'}
+          </p>
+        </div>
       ) : mode === 'view' ? (
         // ── VIEW: structured profile parsed from the CV ──────────────────
         <div className="grid grid-cols-12 gap-6">
@@ -5439,32 +5457,22 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
               </ProfileBlock>
             )}
             {!cv.hasSections && !structured && (
-              aiParsing ? (
-                <div className="card space-y-3 animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-1/3" />
-                  <div className="space-y-2">
-                    <div className="h-3 bg-gray-100 rounded w-full" />
-                    <div className="h-3 bg-gray-100 rounded w-5/6" />
-                    <div className="h-3 bg-gray-100 rounded w-4/6" />
-                  </div>
-                  <div className="space-y-2 pt-2">
-                    <div className="h-3 bg-gray-100 rounded w-full" />
-                    <div className="h-3 bg-gray-100 rounded w-3/4" />
-                  </div>
-                  <p className="text-xs text-primary font-medium flex items-center gap-1.5 pt-1">
-                    <span className="animate-spin w-3 h-3 border-2 border-primary border-t-transparent rounded-full" />
-                    AI sedang menyusun profil kamu…
-                  </p>
+              <div className="card space-y-3 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-1/3" />
+                <div className="space-y-2">
+                  <div className="h-3 bg-gray-100 rounded w-full" />
+                  <div className="h-3 bg-gray-100 rounded w-5/6" />
+                  <div className="h-3 bg-gray-100 rounded w-4/6" />
                 </div>
-              ) : (
-                <ProfileBlock icon={<FileText size={16} />} title="Isi CV">
-                  <p className="text-xs text-amber-600 mb-3 flex items-start gap-1.5">
-                    <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                    Belum bisa memilah CV jadi bagian. Tambahkan judul seksi seperti <b>EXPERIENCE</b>, <b>EDUCATION</b>, <b>SKILLS</b> di CV-mu — atau klik <b>Susun dengan AI</b> di atas.
-                  </p>
-                  <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans max-h-80 overflow-y-auto scrollbar-thin">{text}</pre>
-                </ProfileBlock>
-              )
+                <div className="space-y-2 pt-2">
+                  <div className="h-3 bg-gray-100 rounded w-full" />
+                  <div className="h-3 bg-gray-100 rounded w-3/4" />
+                </div>
+                <p className="text-xs text-primary font-medium flex items-center gap-1.5 pt-1">
+                  <span className="animate-spin w-3 h-3 border-2 border-primary border-t-transparent rounded-full" />
+                  {aiParsing ? 'AI sedang menyusun profil kamu…' : 'Menyusun profil…'}
+                </p>
+              </div>
             )}
           </div>
           <div className="col-span-12 lg:col-span-4 space-y-6">
