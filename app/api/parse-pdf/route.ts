@@ -16,13 +16,28 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
     })
 
     parser.on('pdfParser_dataReady', (data: any) => {
-      const pages: string[] = (data?.Pages ?? []).map((page: any) =>
-        (page.Texts ?? [])
-          .map((t: any) =>
-            (t.R ?? []).map((r: any) => decodeURIComponent(r.T ?? '')).join(''),
+      const pages: string[] = (data?.Pages ?? []).map((page: any) => {
+        // Group text items by rounded y-coordinate so each visual row becomes one line.
+        const items: { x: number; y: number; text: string }[] = (page.Texts ?? []).map((t: any) => ({
+          x: t.x as number,
+          y: Math.round((t.y as number) * 4) / 4, // round to nearest 0.25 to merge sub-pixel jitter
+          text: (t.R ?? []).map((r: any) => decodeURIComponent(r.T ?? '')).join(''),
+        }))
+
+        const lineMap = new Map<number, { x: number; text: string }[]>()
+        for (const item of items) {
+          if (!lineMap.has(item.y)) lineMap.set(item.y, [])
+          lineMap.get(item.y)!.push({ x: item.x, text: item.text })
+        }
+
+        return [...lineMap.entries()]
+          .sort(([a], [b]) => a - b)
+          .map(([, cols]) =>
+            cols.sort((a, b) => a.x - b.x).map(c => c.text).join(' ').trim(),
           )
-          .join(' '),
-      )
+          .filter(Boolean)
+          .join('\n')
+      })
       resolve(pages.join('\n\n').trim())
     })
 

@@ -4983,7 +4983,8 @@ function parseCv(text: string): ParsedCv {
   let firstHeader = lines.findIndex(l => headerKey(l))
   if (firstHeader === -1) firstHeader = Math.min(lines.length, 4)
   const intro = lines.slice(0, firstHeader).filter(Boolean)
-  const name = intro[0] || ''
+  const rawName = intro[0] || ''
+  const name = rawName.length <= 80 ? rawName : '' // reject if line looks like a raw dump
   const headline = intro.slice(1).find(l => !/@|linkedin\.com|\+?\d{6}/i.test(l)) || ''
   const locLine = intro.find(l => /[A-Z][a-z]+,\s*[A-Z][a-z]+/.test(l))
   const location = locLine?.match(/([A-Z][\w.]+(?:\s[A-Z][\w.]+)*,\s*[A-Z][\w ]+?)(?:\s*[·|]|\s+\S+@|$)/)?.[1]?.trim()
@@ -5287,10 +5288,6 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
 
   return (
     <div className="space-y-6">
-      {/* TEMP DEBUG — remove after fixing */}
-      <div className="text-xs bg-yellow-100 border border-yellow-300 p-2 rounded font-mono">
-        DBG: mode=<b>{mode}</b> aiParsing=<b>{String(aiParsing)}</b> structured=<b>{structured ? 'YES' : 'NO'}</b> hasSections=<b>{String(cv.hasSections)}</b> hasKey=<b>{String(hasGeminiKey)}</b>
-      </div>
       {/* ── Profile header ─────────────────────────────────────────────── */}
       <div className="card overflow-hidden p-0">
         {/* Banner */}
