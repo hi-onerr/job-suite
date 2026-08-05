@@ -1503,11 +1503,15 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
 }) {
   const [filter, setFilter] = useState('all')
   const [regionFilter, setRegionFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<'list' | 'board' | 'calendar'>('list')
   const [modalJobId, setModalJobId] = useState<string | null>(null)
   const modalJob = jobs.find(j => j.id === modalJobId) || null
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+
+  const PAGE_SIZE = 10
 
   const todayStr = () => new Date().toISOString().slice(0, 10)
   const applyPreset = (preset: 'today' | '7d' | 'month') => {
@@ -1550,8 +1554,17 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
     const d = jobDate(j)
     if (dateFrom && d < dateFrom) return false
     if (dateTo && d > dateTo) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      const hit = (s: string) => s.toLowerCase().includes(q)
+      if (!hit(j.role) && !hit(j.company) && !hit(j.location) && !hit(j.notes || '')) return false
+    }
     return true
   })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const regionCount = (id: string) => id === 'all' ? jobs.length : jobs.filter(j => detectRegion(j.location) === id).length
 
@@ -1616,12 +1629,32 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
           </button>
         </div>
 
+        {/* Search box */}
+        <div className="relative mb-3">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Cari role, perusahaan, lokasi…"
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setPage(1) }}
+            className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(''); setPage(1) }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
         {/* Status filter */}
         <div className="flex gap-1 mb-3 flex-wrap">
           {['all', 'draft', 'saved', 'applied', 'interview', 'offer', 'rejected'].map(s => (
             <button
               key={s}
-              onClick={() => setFilter(s)}
+              onClick={() => { setFilter(s); setPage(1) }}
               className={`text-xs px-3 py-1 rounded-full transition-colors capitalize ${
                 filter === s ? 'bg-primary text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-primary'
               }`}
@@ -1636,7 +1669,7 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
           {REGIONS.filter(r => r.id === 'all' || regionCount(r.id) > 0).map(r => (
             <button
               key={r.id}
-              onClick={() => setRegionFilter(r.id)}
+              onClick={() => { setRegionFilter(r.id); setPage(1) }}
               className={`text-xs px-2.5 py-1 rounded-full transition-colors flex items-center gap-1 ${
                 regionFilter === r.id
                   ? 'bg-accent text-white'
@@ -1716,33 +1749,83 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            {filtered.map(job => (
-              <div
-                key={job.id}
-                onClick={() => onSelect(job)}
-                className={`card cursor-pointer hover:border-primary/30 transition-all p-4 ${
-                  selectedJob?.id === job.id ? 'border-primary/50 bg-blue-50/30' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={STATUS_CONFIG[job.status].color}>{STATUS_CONFIG[job.status].label}</span>
-                      {job.matchScore > 0 && (
-                        <span className={`text-xs font-medium ${job.matchScore >= 75 ? 'text-green-600' : job.matchScore >= 60 ? 'text-yellow-600' : 'text-red-500'}`}>
-                          {job.matchScore}% match
-                        </span>
-                      )}
+          <>
+            <div className="space-y-2">
+              {paginated.map(job => (
+                <div
+                  key={job.id}
+                  onClick={() => onSelect(job)}
+                  className={`card cursor-pointer hover:border-primary/30 transition-all p-4 ${
+                    selectedJob?.id === job.id ? 'border-primary/50 bg-blue-50/30' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={STATUS_CONFIG[job.status].color}>{STATUS_CONFIG[job.status].label}</span>
+                        {job.matchScore > 0 && (
+                          <span className={`text-xs font-medium ${job.matchScore >= 75 ? 'text-green-600' : job.matchScore >= 60 ? 'text-yellow-600' : 'text-red-500'}`}>
+                            {job.matchScore}% match
+                          </span>
+                        )}
+                      </div>
+                      <p className="font-medium text-gray-900 text-sm truncate">{decodeHtml(job.role)}</p>
+                      <p className="text-xs text-gray-500">{decodeHtml(job.company)} · {job.location}</p>
                     </div>
-                    <p className="font-medium text-gray-900 text-sm truncate">{decodeHtml(job.role)}</p>
-                    <p className="text-xs text-gray-500">{decodeHtml(job.company)} · {job.location}</p>
+                    <ChevronRight size={16} className="text-gray-400 flex-shrink-0 mt-1" />
                   </div>
-                  <ChevronRight size={16} className="text-gray-400 flex-shrink-0 mt-1" />
+                </div>
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                <p className="text-xs text-gray-500">
+                  {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} dari {filtered.length} lamaran
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                    className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-primary/50 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, p, i, arr) => {
+                      if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('…')
+                      acc.push(p)
+                      return acc
+                    }, [])
+                    .map((p, i) =>
+                      p === '…' ? (
+                        <span key={`ellipsis-${i}`} className="px-1 text-xs text-gray-400">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => setPage(p as number)}
+                          className={`min-w-[28px] h-7 text-xs rounded-lg border transition-colors ${
+                            safePage === p
+                              ? 'bg-primary text-white border-primary'
+                              : 'border-gray-200 text-gray-600 hover:border-primary/50 hover:text-primary'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      )
+                    )}
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
+                    className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-primary/50 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 
