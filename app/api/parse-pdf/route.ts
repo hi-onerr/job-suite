@@ -30,7 +30,7 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
           lineMap.get(item.y)!.push({ x: item.x, text: item.text })
         }
 
-        return [...lineMap.entries()]
+        return Array.from(lineMap.entries())
           .sort(([a], [b]) => a - b)
           .map(([, cols]) =>
             cols.sort((a, b) => a.x - b.x).map(c => c.text).join(' ').trim(),

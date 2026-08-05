@@ -5250,8 +5250,12 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
   const expEntries = s.experience?.length ? s.experience : null
   const eduEntries = s.education?.length ? s.education : null
   const projEntries = s.projects?.length ? s.projects : null
-  const name = s.name || cv.name || 'Profil kamu'
-  const headline = s.headline || cv.headline || 'Lengkapi CV-mu agar AI bisa membantu lebih maksimal'
+  // Reject cv.name / cv.headline when the PDF extracted as one long line (no newlines) — the
+  // heuristic parser would set name = the entire CV text. Only trust short values (< 80 chars).
+  const safeCvName = cv.name.length <= 80 ? cv.name : ''
+  const safeCvHeadline = cv.headline.length <= 120 ? cv.headline : ''
+  const name = s.name || safeCvName || 'Profil kamu'
+  const headline = s.headline || safeCvHeadline || 'Lengkapi CV-mu agar AI bisa membantu lebih maksimal'
 
   const strength =
     ins.score >= 100 ? { label: 'Lengkap', text: 'text-green-700', bar: 'bg-green-500' } :
