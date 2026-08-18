@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) {
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
 
@@ -57,7 +57,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
 
 Rules: never fabricate roles, tools, or metrics. If a gap cannot be truthfully addressed, suggest how to reframe genuinely related experience instead. Use the job description's exact terminology where the candidate really has that experience. No em dashes.`
 
-    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
+    const { text, provider } = await generateTextWithProvider(genAIs, prompt, groqKey, aiPref)
     console.log(`[improve-cv] done in ${Date.now() - t0}ms via ${provider}`)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)

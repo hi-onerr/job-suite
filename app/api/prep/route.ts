@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) {
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
 
@@ -32,14 +32,14 @@ export async function POST(req: NextRequest) {
     // ── Step 1: parallel live searches ────────────────────────────────────────
     const searches = await Promise.all([
       generateTextWithSearch(
-        genAI,
+        genAIs,
         `Find real interview questions and experiences reported by candidates for "${role}" at "${company}". ` +
         `Include questions from Glassdoor, LinkedIn interview reviews, and Indeed. ` +
         `Summarise the most frequently mentioned questions and company-specific interview process details.`,
         groqKey,
       ),
       generateTextWithSearch(
-        genAI,
+        genAIs,
         `What is the actual salary range for "${role}" at "${company}" in ${isInternational ? detectedCity! : 'Indonesia'}? ` +
         `Find real data from Glassdoor Salary, LinkedIn Salary Insights, JobStreet, Indeed, or Levels.fyi. ` +
         `Include monthly gross figures in local currency, broken down by seniority level if available. ` +
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       ),
       isInternational
         ? generateTextWithSearch(
-            genAI,
+            genAIs,
             `What is the monthly cost of living in ${detectedCity} for a single expat professional in 2024–2025? ` +
             `Break down: (1) rent for a 1-bedroom apartment, (2) groceries + dining out, (3) public transport pass, ` +
             `(4) utilities (electricity, water, internet), (5) miscellaneous (gym, entertainment, personal care). ` +
@@ -246,7 +246,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   ]
 }`
 
-    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
+    const { text, provider } = await generateTextWithProvider(genAIs, prompt, groqKey, aiPref)
 
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)

@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { NextRequest } from 'next/server'
 import { getUserId } from './session'
-import { getUserKey } from './keys'
+import { getUserKey, getUserKeys } from './keys'
 import { prisma } from './db'
 
 const KEY = process.env.GEMINI_API_KEY
@@ -23,16 +23,30 @@ export function getGenAI(keyOverride?: string | null): GoogleGenerativeAI | null
 }
 
 /**
+ * Resolves ALL Gemini clients for an authenticated request, one per stored key.
+ * Prefers user keys (array, for rotation), then the legacy request header, then
+ * the GEMINI_API_KEY env var. Returns [] when no usable key is available.
+ */
+export async function getGenAIsForRequest(req: NextRequest): Promise<GoogleGenerativeAI[]> {
+  const userId = await getUserId()
+  let keys: string[] = []
+  if (userId) keys = await getUserKeys(userId, 'gemini')
+  if (!keys.length) {
+    const headerKey = req.headers.get('x-gemini-key')
+    if (headerKey?.trim()) keys = [headerKey.trim()]
+  }
+  if (!keys.length && KEY && !PLACEHOLDERS.includes(KEY.trim())) keys = [KEY]
+  return keys.map(k => new GoogleGenerativeAI(k))
+}
+
+/**
  * Resolves a Gemini client for an authenticated request: prefers the user's
  * key stored (encrypted) in the DB, then a request header (legacy / transition),
  * then the GEMINI_API_KEY env var. Returns null when none is usable.
  */
 export async function getGenAIForRequest(req: NextRequest): Promise<GoogleGenerativeAI | null> {
-  let key: string | null = null
-  const userId = await getUserId()
-  if (userId) key = await getUserKey(userId, 'gemini')
-  if (!key) key = req.headers.get('x-gemini-key')
-  return getGenAI(key)
+  const genAIs = await getGenAIsForRequest(req)
+  return genAIs[0] ?? null
 }
 
 // Candidate models tried in order — guards against a model being retired (404)
@@ -138,22 +152,26 @@ export async function getUserAiModelPref(userId: string): Promise<'auto' | 'gemi
 }
 
 /**
- * Run content (text and/or images) with resilience:
+ * Run content (text and/or images) with resilience and key rotation:
  *  - 404 (model retired) → skip to the next candidate model (permanent, no retry).
- *  - 429 rate-limit (transient) → skip to next model; retry whole set with backoff.
- *  - 503 / 500 / "overloaded" (transient) → same retry behaviour as rate-limit.
- *  - 429 quota-exhausted (permanent) → skip models but do NOT retry across passes.
+ *  - 429 rate-limit / quota exhausted → rotate to the next Gemini key immediately;
+ *    only fall back to Groq when all keys are exhausted.
+ *  - 503 / 500 / "overloaded" (transient) → retry same key with backoff delays.
  *  - any other error → throw immediately.
  *  preferredProvider: 'auto' = Gemini first + Groq fallback (default)
  *                     'gemini' = Gemini only, skip Groq
  *                     'groq' = try Groq first, fallback to Gemini
+ *
+ * Accepts a single GoogleGenerativeAI or an array for key rotation.
  */
 async function runWithFallback(
-  genAI: GoogleGenerativeAI,
+  genAIInput: GoogleGenerativeAI | GoogleGenerativeAI[],
   parts: any[],
   groqKey?: string | null,
   preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto',
 ): Promise<{ text: string; provider: 'gemini' | 'groq' }> {
+  const genAIs = Array.isArray(genAIInput) ? genAIInput : [genAIInput]
+
   // When user prefers Groq and a text-only prompt is available, try Groq first.
   if (preferredProvider === 'groq' && groqKey) {
     const textPart = parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : null
@@ -164,54 +182,70 @@ async function runWithFallback(
       } catch { /* fall through to Gemini */ }
     }
   }
+
+  // Retry delays for overload errors (per-model, worth waiting out).
+  // Rate-limit/quota errors skip delays and rotate to the next key immediately.
+  const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
+
   let lastErr: any
   let hadTransientError = false
-  // Retry delays for transient errors (rate-limit / overload).
-  // Total patience: 3+8+15+30 = 56s — enough for Gemini's per-minute rate-limit
-  // window to fully reset before we ever touch Groq.
-  // Rate-limit (429) is per-key — all models share the same quota, so retrying
-  // them repeatedly just amplifies errors. Try all models once, then go to Groq.
-  // Overload (503) is per-model — worth retrying with delays.
-  const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
-  for (let pass = 0; pass <= OVERLOAD_DELAYS.length; pass++) {
-    for (const name of MODEL_CANDIDATES) {
-      const t = Date.now()
-      try {
-        const model = genAI.getGenerativeModel({ model: name })
-        const result = await model.generateContent(parts)
-        console.log(`[gemini] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
-        return { text: result.response.text(), provider: 'gemini' }
-      } catch (e: any) {
-        lastErr = e
-        if (isOverloadError(e) || isRateLimitError(e)) hadTransientError = true
-        console.warn(`[gemini] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 200)}`)
-        if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
-        throw e
+
+  // ── Key rotation outer loop ───────────────────────────────────────────────
+  for (let ki = 0; ki < genAIs.length; ki++) {
+    const genAI = genAIs[ki]
+    const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
+    let keyErr: any
+    let keyHadTransient = false
+
+    for (let pass = 0; pass <= OVERLOAD_DELAYS.length; pass++) {
+      for (const name of MODEL_CANDIDATES) {
+        const t = Date.now()
+        try {
+          const model = genAI.getGenerativeModel({ model: name })
+          const result = await model.generateContent(parts)
+          console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
+          return { text: result.response.text(), provider: 'gemini' }
+        } catch (e: any) {
+          keyErr = e; lastErr = e
+          if (isOverloadError(e) || isRateLimitError(e)) { keyHadTransient = true; hadTransientError = true }
+          console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 200)}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          throw e
+        }
       }
+      // Rate-limit or quota: rotate to next key immediately (no delay).
+      if (isQuotaError(keyErr) || isRateLimitError(keyErr)) {
+        const reason = isQuotaError(keyErr) ? 'quota exhausted' : 'rate-limited'
+        const next = ki < genAIs.length - 1 ? `rotating to key${ki + 2}` : 'no more keys — going to Groq'
+        console.warn(`[gemini${keyLabel}] ${reason} — ${next}`)
+        break
+      }
+      if (!isOverloadError(keyErr)) break
+      if (pass >= OVERLOAD_DELAYS.length) break
+      const delay = OVERLOAD_DELAYS[pass]
+      console.warn(`[gemini${keyLabel}] all models overloaded — waiting ${delay / 1000}s before pass ${pass + 1}`)
+      await sleep(delay)
     }
-    // Quota or rate-limit: no point retrying Gemini (per-key limit). Go to Groq.
-    if (isQuotaError(lastErr) || isRateLimitError(lastErr)) {
-      console.warn(`[gemini] ${isQuotaError(lastErr) ? 'quota exhausted' : 'rate-limited'} — going to Groq immediately`)
-      break
-    }
-    if (!isOverloadError(lastErr)) break
-    if (pass >= OVERLOAD_DELAYS.length) break
-    const delay = OVERLOAD_DELAYS[pass]
-    console.warn(`[gemini] all models overloaded — waiting ${delay / 1000}s before pass ${pass + 1}`)
-    await sleep(delay)
+
+    // If this key was rate-limited/quota and more keys remain, try next key.
+    if ((isQuotaError(keyErr) || isRateLimitError(keyErr)) && ki < genAIs.length - 1) continue
+
+    // Non-retryable failure or last key — exit rotation.
+    lastErr = keyErr
+    if (keyHadTransient) hadTransientError = true
+    break
   }
+
   // ── Try Groq fallback ────────────────────────────────────────────────────────
-  // Text-only prompts only (Groq has no vision API). Triggered when Gemini is
-  // unavailable for any reason (transient rate-limit, overload, or quota exhaustion).
-  // hadTransientError guards the case where lastErr is a 404 that overwrote an earlier 429.
-  // Skipped when user explicitly prefers Gemini-only.
+  // Text-only prompts only (Groq has no vision API). Triggered when all Gemini
+  // keys are unavailable (rate-limit, quota, or overload). Skipped for Gemini-only.
   let triedGroq = false
   if (preferredProvider !== 'gemini' && groqKey && (hadTransientError || isOverloadError(lastErr) || isRateLimitError(lastErr) || isQuotaError(lastErr))) {
     const textPart = parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : null
     if (textPart) {
       triedGroq = true
       try {
-        console.log('[groq] Gemini unavailable — trying Groq fallback')
+        console.log('[groq] all Gemini keys unavailable — trying Groq fallback')
         return { text: await tryGroqFallback(groqKey, textPart), provider: 'groq' }
       } catch (groqErr: any) {
         console.warn('[groq] fallback failed:', groqErr?.message?.slice(0, 80))
@@ -219,14 +253,13 @@ async function runWithFallback(
     }
   }
 
-  // ── Final Gemini retry after Groq failure ─────────────────────────────────
-  // Rate-limits are per-minute windows. The time spent attempting Groq (even
-  // when it fails instantly with 413/429) often clears the Gemini rate-limit
-  // window, so one extra pass after a short sleep frequently succeeds.
-  // We only do this for transient errors — quota exhaustion won't clear on its own.
+  // ── Final Gemini retry after Groq failure (first key only) ────────────────
+  // Rate-limits are per-minute windows. The time spent attempting Groq often
+  // clears the window, so one extra pass on the first key frequently succeeds.
   if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
     console.warn('[gemini] Groq failed — final Gemini retry in 5s (rate-limit window may have reset)')
     await sleep(5000)
+    const genAI = genAIs[0]
     for (const name of MODEL_CANDIDATES) {
       const t = Date.now()
       try {
@@ -253,13 +286,13 @@ async function runWithFallback(
 }
 
 /** Run a text prompt, with Gemini model fallback + optional Groq backup. */
-export function generateText(genAI: GoogleGenerativeAI, prompt: string, groqKey?: string | null, preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto'): Promise<string> {
+export function generateText(genAI: GoogleGenerativeAI | GoogleGenerativeAI[], prompt: string, groqKey?: string | null, preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto'): Promise<string> {
   return runWithFallback(genAI, [prompt], groqKey, preferredProvider).then(r => r.text)
 }
 
 /** Like generateText but also returns which provider served the request. */
 export function generateTextWithProvider(
-  genAI: GoogleGenerativeAI,
+  genAI: GoogleGenerativeAI | GoogleGenerativeAI[],
   prompt: string,
   groqKey?: string | null,
   preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto',
@@ -276,11 +309,13 @@ export interface TokenUsage {
 
 /** Like generateText but also returns token usage metadata and provider. Groq fallback returns usage: null. */
 export async function generateTextWithUsage(
-  genAI: GoogleGenerativeAI,
+  genAIInput: GoogleGenerativeAI | GoogleGenerativeAI[],
   prompt: string,
   groqKey?: string | null,
   preferredProvider: 'auto' | 'gemini' | 'groq' = 'auto',
 ): Promise<{ text: string; usage: TokenUsage | null; provider: 'gemini' | 'groq' }> {
+  const genAIs = Array.isArray(genAIInput) ? genAIInput : [genAIInput]
+
   // Groq-first when user prefers it
   if (preferredProvider === 'groq' && groqKey) {
     try {
@@ -288,51 +323,61 @@ export async function generateTextWithUsage(
       return { text, usage: null, provider: 'groq' as const }
     } catch { /* fall through to Gemini */ }
   }
+
+  const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
   let lastErr: any
   let hadTransientError = false
-  const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
-  for (let pass = 0; pass <= OVERLOAD_DELAYS.length; pass++) {
-    for (const name of MODEL_CANDIDATES) {
-      const t = Date.now()
-      try {
-        const model = genAI.getGenerativeModel({ model: name })
-        const result = await model.generateContent([prompt])
-        console.log(`[gemini] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
-        const meta = result.response.usageMetadata
-        const usage: TokenUsage | null = meta
-          ? {
-              promptTokens: meta.promptTokenCount ?? 0,
-              outputTokens: meta.candidatesTokenCount ?? 0,
-              totalTokens: meta.totalTokenCount ?? 0,
-              model: name,
-            }
-          : null
-        return { text: result.response.text(), usage, provider: 'gemini' as const }
-      } catch (e: any) {
-        lastErr = e
-        if (isOverloadError(e) || isRateLimitError(e)) hadTransientError = true
-        console.warn(`[gemini] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 200)}`)
-        if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
-        throw e
+
+  // ── Key rotation outer loop ───────────────────────────────────────────────
+  for (let ki = 0; ki < genAIs.length; ki++) {
+    const genAI = genAIs[ki]
+    const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
+    let keyErr: any
+
+    for (let pass = 0; pass <= OVERLOAD_DELAYS.length; pass++) {
+      for (const name of MODEL_CANDIDATES) {
+        const t = Date.now()
+        try {
+          const model = genAI.getGenerativeModel({ model: name })
+          const result = await model.generateContent([prompt])
+          console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
+          const meta = result.response.usageMetadata
+          const usage: TokenUsage | null = meta
+            ? { promptTokens: meta.promptTokenCount ?? 0, outputTokens: meta.candidatesTokenCount ?? 0, totalTokens: meta.totalTokenCount ?? 0, model: name }
+            : null
+          return { text: result.response.text(), usage, provider: 'gemini' as const }
+        } catch (e: any) {
+          keyErr = e; lastErr = e
+          if (isOverloadError(e) || isRateLimitError(e)) hadTransientError = true
+          console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 200)}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          throw e
+        }
       }
+      if (isQuotaError(keyErr) || isRateLimitError(keyErr)) {
+        const reason = isQuotaError(keyErr) ? 'quota exhausted' : 'rate-limited'
+        const next = ki < genAIs.length - 1 ? `rotating to key${ki + 2}` : 'going to Groq'
+        console.warn(`[gemini${keyLabel}] ${reason} — ${next}`)
+        break
+      }
+      if (!isOverloadError(keyErr)) break
+      if (pass >= OVERLOAD_DELAYS.length) break
+      const delay = OVERLOAD_DELAYS[pass]
+      console.warn(`[gemini${keyLabel}] all models overloaded — waiting ${delay / 1000}s before pass ${pass + 1}`)
+      await new Promise(r => setTimeout(r, delay))
     }
-    // Rate-limit is per-key — retrying models wastes quota. Go to Groq immediately.
-    if (isQuotaError(lastErr) || isRateLimitError(lastErr)) {
-      console.warn(`[gemini] ${isQuotaError(lastErr) ? 'quota exhausted' : 'rate-limited'} — going to Groq immediately`)
-      break
-    }
-    if (!isOverloadError(lastErr)) break
-    if (pass >= OVERLOAD_DELAYS.length) break
-    const delay = OVERLOAD_DELAYS[pass]
-    console.warn(`[gemini] all models overloaded — waiting ${delay / 1000}s before pass ${pass + 1}`)
-    await new Promise(r => setTimeout(r, delay))
+
+    if ((isQuotaError(keyErr) || isRateLimitError(keyErr)) && ki < genAIs.length - 1) continue
+    lastErr = keyErr
+    break
   }
+
   // ── Try Groq fallback ────────────────────────────────────────────────────────
   let triedGroq = false
   if (preferredProvider !== 'gemini' && groqKey && (hadTransientError || isOverloadError(lastErr) || isRateLimitError(lastErr) || isQuotaError(lastErr))) {
     triedGroq = true
     try {
-      console.log('[groq] Gemini unavailable — trying Groq fallback (usage=null)')
+      console.log('[groq] all Gemini keys unavailable — trying Groq fallback (usage=null)')
       const text = await tryGroqFallback(groqKey, prompt)
       return { text, usage: null, provider: 'groq' as const }
     } catch (groqErr: any) {
@@ -340,10 +385,11 @@ export async function generateTextWithUsage(
     }
   }
 
-  // ── Final Gemini retry after Groq failure ─────────────────────────────────
+  // ── Final Gemini retry after Groq failure (first key) ────────────────────
   if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
     console.warn('[gemini] Groq failed — final Gemini retry in 5s')
     await new Promise(r => setTimeout(r, 5000))
+    const genAI = genAIs[0]
     for (const name of MODEL_CANDIDATES) {
       const t = Date.now()
       try {
@@ -386,10 +432,11 @@ export interface SearchGroundedResult {
  * Falls back to plain text generation if search grounding is unsupported.
  */
 export async function generateTextWithSearch(
-  genAI: GoogleGenerativeAI,
+  genAIInput: GoogleGenerativeAI | GoogleGenerativeAI[],
   prompt: string,
   groqKey?: string | null,
 ): Promise<SearchGroundedResult> {
+  const genAI = Array.isArray(genAIInput) ? genAIInput[0] : genAIInput
   const searchModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest']
   for (const name of searchModels) {
     try {
@@ -412,13 +459,13 @@ export async function generateTextWithSearch(
       break
     }
   }
-  // Fallback: plain generation (Groq if available, otherwise Gemini no-search)
-  const { text, provider } = await runWithFallback(genAI, [prompt], groqKey)
+  // Fallback: plain generation (Groq if available, otherwise Gemini no-search) — use all keys for rotation
+  const { text, provider } = await runWithFallback(genAIInput, [prompt], groqKey)
   return { text, sources: [], searchQueries: [], provider }
 }
 
 /** Run a prompt against an image (base64, no data: prefix) — multimodal/vision. */
-export function generateFromImage(genAI: GoogleGenerativeAI, prompt: string, base64: string, mimeType: string): Promise<string> {
+export function generateFromImage(genAI: GoogleGenerativeAI | GoogleGenerativeAI[], prompt: string, base64: string, mimeType: string): Promise<string> {
   return runWithFallback(genAI, [{ inlineData: { data: base64, mimeType } }, prompt]).then(r => r.text)
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../lib/db'
 import { getUserId } from '../../lib/session'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserKey } from '../../lib/keys'
 
 // POST /api/parse-profile — use Gemini to turn the user's raw CV text into a
@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Profil masih kosong.' }, { status: 400 })
   }
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) {
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
 
@@ -61,7 +61,7 @@ Respond ONLY with valid JSON (no markdown, no backticks) in exactly this shape:
   "certifications": ["<certification>", "..."]
 }`
 
-    const { text: raw } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
+    const { text: raw } = await generateTextWithProvider(genAIs, prompt, groqKey, aiPref)
     const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateFromImage, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
+import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateFromImage, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 
 // Max decoded image size we'll accept (~6MB) to keep requests sane.
@@ -33,13 +33,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Gambar terlalu besar (maks ~6MB). Coba kompres dulu.' }, { status: 413 })
   }
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) {
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
 
   try {
-    const text = await generateFromImage(genAI, PROMPT, image, mimeType || 'image/png')
+    const text = await generateFromImage(genAIs, PROMPT, image, mimeType || 'image/png')
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const data = JSON.parse(cleaned)
     return NextResponse.json({
