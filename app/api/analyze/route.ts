@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) {
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     // For initial analysis: run salary search in parallel with main scoring
     // For rescore: skip salary search (only score matters)
     const [analysisResult, salarySearch] = await Promise.all([
-      generateTextWithProvider(genAI, `You are an expert HR recruiter and career coach. Analyze how well this candidate profile matches the job description.
+      generateTextWithProvider(genAIs, `You are an expert HR recruiter and career coach. Analyze how well this candidate profile matches the job description.
 
 CANDIDATE PROFILE:
 ${profileTrimmed}
@@ -55,7 +55,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   "detectedSectors": [<1-3 sector tags that best describe this job, pick from: finance, banking, investment, risk, consulting, strategy, advisory, supply-chain, logistics, procurement, operations, technology, software, data, healthcare, retail, manufacturing, hr, marketing, legal, accounting>]
 }`, groqKey, aiPref),
       isRescore ? Promise.resolve(null) : generateTextWithSearch(
-        genAI,
+        genAIs,
         `What is the salary range for "${role || 'this role'}" at "${company || 'this company'}" in ${location} in 2024–2025? ` +
         `Search Glassdoor, LinkedIn Salary, Indeed, Levels.fyi, or local job boards for ${location}. ` +
         `Return the gross salary range in the local currency (${location === 'Indonesia' ? 'IDR' : location.match(/germany|netherlands|france|finland/i) ? 'EUR' : location.match(/canada/i) ? 'CAD' : location.match(/uk|united kingdom/i) ? 'GBP' : location.match(/usa|united states/i) ? 'USD' : 'local currency'}). ` +

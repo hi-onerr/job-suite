@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithUsage, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithUsage, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
 import { getUserKey } from '../../lib/keys'
 
@@ -298,8 +298,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) {
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
 
@@ -321,7 +321,7 @@ export async function POST(req: NextRequest) {
     if (safeRequest) {
       prompt += `\nUSER CUSTOMIZATION REQUEST (apply only where consistent with producing an honest, professional document — do not override any truthfulness, format, or safety rules above):\n${safeRequest}\n`
     }
-    const { text: content, usage, provider } = await generateTextWithUsage(genAI, prompt, groqKey, aiPref)
+    const { text: content, usage, provider } = await generateTextWithUsage(genAIs, prompt, groqKey, aiPref)
     return NextResponse.json({ content, usage, provider })
   } catch (error: any) {
     console.error('Generation error:', error)

@@ -64,9 +64,9 @@ const API_PROVIDERS: ApiProvider[] = [
   { id: 'openai', label: 'OpenAI', placeholder: 'sk-...', helpUrl: 'https://platform.openai.com/api-keys', active: false },
 ]
 
-// Which providers the current user has a key saved for (booleans only — the
-// server never returns the key values themselves).
-type ConfiguredKeys = Record<string, boolean>
+// How many keys each provider has saved (0 = none, N = N keys configured).
+// The server never returns the key values themselves.
+type ConfiguredKeys = Record<string, number>
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -5856,6 +5856,8 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [show, setShow] = useState<Record<string, boolean>>({})
+  const [geminiKeyInput, setGeminiKeyInput] = useState('')
+  const [geminiShowInput, setGeminiShowInput] = useState(false)
   const [importing, setImporting] = useState(false)
   // Adzuna needs two values; stored server-side as a single "app_id:app_key" string.
   const [adzunaId, setAdzunaId] = useState('')
@@ -5902,6 +5904,28 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
 
   const removeKey = async (id: string) => {
     await fetch('/api/keys', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ [id]: '' }) })
+    onSaved()
+  }
+
+  const addGeminiKey = async () => {
+    const trimmed = geminiKeyInput.trim()
+    if (!trimmed) return
+    setSaveError('')
+    const res = await fetch('/api/keys', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ gemini: trimmed }) })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setSaveError((data as any).error ?? 'Gagal menyimpan, coba lagi')
+      return
+    }
+    setGeminiKeyInput('')
+    setGeminiShowInput(false)
+    setSaved(true)
+    onSaved()
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const removeGeminiKey = async (slot: number) => {
+    await fetch('/api/keys', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ gemini_remove_slot: slot }) })
     onSaved()
   }
 
@@ -6238,8 +6262,88 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
       <SubHeader title="API Keys" />
       <div className="card">
         <p className="text-xs text-gray-500 mb-4">Disimpan terenkripsi di server, terikat ke akun kamu.</p>
-        <div className="space-y-4">
-          {API_PROVIDERS.map(p => (
+        <div className="space-y-6">
+
+          {/* ── Gemini: multi-key with rotation ── */}
+          {(() => {
+            const p = API_PROVIDERS.find(x => x.id === 'gemini')!
+            const count = configuredKeys.gemini || 0
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    {p.label}
+                    <span className="badge-green text-[10px]">aktif</span>
+                    {count > 0 && <span className="badge-blue text-[10px]">{count} key{count > 1 ? 's' : ''} tersimpan</span>}
+                  </label>
+                  <a href={p.helpUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    Ambil key <ExternalLink size={10} />
+                  </a>
+                </div>
+
+                {/* Saved key slots */}
+                {count > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {Array.from({ length: count }, (_, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                        <Key size={12} className="text-gray-400 flex-shrink-0" />
+                        <span className="text-xs text-gray-500 font-mono flex-1">Key {i + 1} — ••••••••••••••••</span>
+                        <button
+                          type="button"
+                          onClick={() => removeGeminiKey(i)}
+                          className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add new key */}
+                {count < 5 && (
+                  geminiShowInput ? (
+                    <div className="flex gap-2">
+                      <input
+                        type={geminiShowInput && show.gemini ? 'text' : 'password'}
+                        value={geminiKeyInput}
+                        onChange={e => setGeminiKeyInput(e.target.value)}
+                        placeholder={p.placeholder}
+                        className="input text-sm flex-1 font-mono"
+                        autoComplete="off"
+                        autoFocus
+                        onKeyDown={e => e.key === 'Enter' && addGeminiKey()}
+                      />
+                      <button type="button" onClick={() => setShow({ ...show, gemini: !show.gemini })} className="btn-secondary text-xs px-3 whitespace-nowrap">
+                        {show.gemini ? 'Sembunyikan' : 'Lihat'}
+                      </button>
+                      <button type="button" onClick={addGeminiKey} disabled={!geminiKeyInput.trim()} className="btn-primary text-xs px-3 whitespace-nowrap">
+                        Tambah
+                      </button>
+                      <button type="button" onClick={() => { setGeminiKeyInput(''); setGeminiShowInput(false) }} className="btn-secondary text-xs px-3 whitespace-nowrap">
+                        Batal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setGeminiShowInput(true)}
+                      className="btn-secondary text-xs flex items-center gap-1"
+                    >
+                      <Plus size={12} /> {count === 0 ? 'Tambah key' : 'Tambah key lagi'}
+                    </button>
+                  )
+                )}
+                {count >= 5 && <p className="text-xs text-gray-400 mt-1">Maksimum 5 key. Hapus salah satu untuk menambah.</p>}
+                {count > 1 && <p className="text-xs text-gray-400 mt-1">Key dirotasi otomatis saat rate limit — key berikutnya dicoba sebelum fallback ke Groq.</p>}
+                {saveError && <p className="text-xs text-red-500 mt-1">{saveError}</p>}
+                {saved && <p className="text-xs text-green-600 mt-1">✓ Tersimpan!</p>}
+              </div>
+            )
+          })()}
+
+          {/* ── Other providers: single-key ── */}
+          {API_PROVIDERS.filter(p => p.id !== 'gemini').map(p => (
             <div key={p.id}>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -6263,20 +6367,21 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
                 <button type="button" onClick={() => setShow({ ...show, [p.id]: !show[p.id] })} className="btn-secondary text-xs px-3 whitespace-nowrap">
                   {show[p.id] ? 'Sembunyikan' : 'Lihat'}
                 </button>
-                {configuredKeys[p.id] && (
+                {configuredKeys[p.id] ? (
                   <button type="button" onClick={() => removeKey(p.id)} className="btn-secondary text-xs px-3 whitespace-nowrap text-red-600">Hapus</button>
-                )}
+                ) : null}
               </div>
               {!p.active && <p className="text-xs text-gray-400 mt-1">Tersimpan untuk nanti — backend belum memakai provider ini.</p>}
             </div>
           ))}
         </div>
-        {saveError && <p className="text-xs text-red-500 mt-3">{saveError}</p>}
-        <div className="flex items-center justify-between mt-3">
+        <div className="flex items-center justify-between mt-4">
           <p className="text-xs text-gray-400 flex items-center gap-1">
             <AlertCircle size={11} /> Key dienkripsi (AES-256-GCM) sebelum disimpan.
           </p>
-          <button onClick={handleSave} className="btn-primary text-sm">{saved ? '✓ Tersimpan!' : 'Simpan Keys'}</button>
+          {Object.values(keys).some(v => v?.trim()) && (
+            <button onClick={handleSave} className="btn-primary text-sm">{saved ? '✓ Tersimpan!' : 'Simpan Keys'}</button>
+          )}
         </div>
       </div>
     </div>

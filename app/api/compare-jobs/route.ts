@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  getGenAIForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref,
+  getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref,
   isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE,
   isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE,
 } from '../../lib/gemini'
@@ -94,8 +94,8 @@ export async function POST(req: NextRequest) {
   if (validUrls.length === 0)
     return NextResponse.json({ error: 'Tidak ada URL valid ditemukan.' }, { status: 400 })
 
-  const genAI = await getGenAIForRequest(req)
-  if (!genAI) return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
+  const genAIs = await getGenAIsForRequest(req)
+  if (!genAIs.length) return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
 
   const groqKey = await getUserKey(userId, 'groq')
   const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
@@ -141,7 +141,7 @@ Respond ONLY with a valid JSON array (no markdown, no backticks), sorted by scor
 ]`
 
   try {
-    const { text, provider } = await generateTextWithProvider(genAI, prompt, groqKey, aiPref)
+    const { text, provider } = await generateTextWithProvider(genAIs, prompt, groqKey, aiPref)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const rankings: any[] = JSON.parse(cleaned)
 
