@@ -253,25 +253,29 @@ async function runWithFallback(
     }
   }
 
-  // ── Final Gemini retry after Groq failure (first key only) ────────────────
+  // ── Final Gemini retry after Groq failure (cycle ALL keys) ────────────────
   // Rate-limits are per-minute windows. The time spent attempting Groq often
-  // clears the window, so one extra pass on the first key frequently succeeds.
+  // clears the window, so one extra pass frequently succeeds. Try every key —
+  // any one of them may have recovered while Groq was being attempted.
   if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
     console.warn('[gemini] Groq failed — final Gemini retry in 5s (rate-limit window may have reset)')
     await sleep(5000)
-    const genAI = genAIs[0]
-    for (const name of MODEL_CANDIDATES) {
-      const t = Date.now()
-      try {
-        const model = genAI.getGenerativeModel({ model: name })
-        const result = await model.generateContent(parts)
-        console.log(`[gemini-final] ${name} OK in ${Date.now() - t}ms`)
-        return { text: result.response.text(), provider: 'gemini' }
-      } catch (e: any) {
-        lastErr = e
-        console.warn(`[gemini-final] ${name} failed — ${e?.status}`)
-        if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
-        throw e
+    for (let ki = 0; ki < genAIs.length; ki++) {
+      const genAI = genAIs[ki]
+      const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
+      for (const name of MODEL_CANDIDATES) {
+        const t = Date.now()
+        try {
+          const model = genAI.getGenerativeModel({ model: name })
+          const result = await model.generateContent(parts)
+          console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
+          return { text: result.response.text(), provider: 'gemini' }
+        } catch (e: any) {
+          lastErr = e
+          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          throw e
+        }
       }
     }
   }
@@ -385,27 +389,30 @@ export async function generateTextWithUsage(
     }
   }
 
-  // ── Final Gemini retry after Groq failure (first key) ────────────────────
+  // ── Final Gemini retry after Groq failure (cycle ALL keys) ───────────────
   if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
     console.warn('[gemini] Groq failed — final Gemini retry in 5s')
     await new Promise(r => setTimeout(r, 5000))
-    const genAI = genAIs[0]
-    for (const name of MODEL_CANDIDATES) {
-      const t = Date.now()
-      try {
-        const model = genAI.getGenerativeModel({ model: name })
-        const result = await model.generateContent([prompt])
-        console.log(`[gemini-final] ${name} OK in ${Date.now() - t}ms`)
-        const meta = result.response.usageMetadata
-        const usage: TokenUsage | null = meta
-          ? { promptTokens: meta.promptTokenCount ?? 0, outputTokens: meta.candidatesTokenCount ?? 0, totalTokens: meta.totalTokenCount ?? 0, model: name }
-          : null
-        return { text: result.response.text(), usage, provider: 'gemini' as const }
-      } catch (e: any) {
-        lastErr = e
-        console.warn(`[gemini-final] ${name} failed — ${e?.status}`)
-        if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
-        throw e
+    for (let ki = 0; ki < genAIs.length; ki++) {
+      const genAI = genAIs[ki]
+      const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
+      for (const name of MODEL_CANDIDATES) {
+        const t = Date.now()
+        try {
+          const model = genAI.getGenerativeModel({ model: name })
+          const result = await model.generateContent([prompt])
+          console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
+          const meta = result.response.usageMetadata
+          const usage: TokenUsage | null = meta
+            ? { promptTokens: meta.promptTokenCount ?? 0, outputTokens: meta.candidatesTokenCount ?? 0, totalTokens: meta.totalTokenCount ?? 0, model: name }
+            : null
+          return { text: result.response.text(), usage, provider: 'gemini' as const }
+        } catch (e: any) {
+          lastErr = e
+          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          throw e
+        }
       }
     }
   }
@@ -530,4 +537,5 @@ export function isAllProvidersFailedError(e: any): boolean {
 }
 
 export const ALL_PROVIDERS_MESSAGE =
-  'Groq (fallback) juga sedang rate-limited. Tunggu 1–2 menit lalu coba lagi — Groq gratis punya batas token per menit.'
+  'Semua key Gemini kamu + Groq (fallback) sedang kena rate-limit. Tunggu 1–2 menit lalu coba lagi. ' +
+  'Kalau sering terjadi: tambah Gemini API key lagi di Settings (dari akun/project Google yang BERBEDA supaya kuotanya terpisah) — sistem akan rotasi otomatis.'
