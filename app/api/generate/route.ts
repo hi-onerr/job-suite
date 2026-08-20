@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithUsage, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithUsage, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
-import { getUserKey } from '../../lib/keys'
 
 const PROMPTS = {
   cv: (profile: string, jobDesc: string, company: string, role: string, _today: string, ats: string) => `
@@ -298,13 +297,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAIs = await getGenAIsForRequest(req)
+  const { genAIs, groqKey, aiPref } = await resolveAiContext(req, userId)
   if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
-
-  const groqKey = await getUserKey(userId, 'groq')
-  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   const promptFn = PROMPTS[type as keyof typeof PROMPTS]
   if (!promptFn) {

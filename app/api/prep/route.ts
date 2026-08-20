@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithProvider, generateTextWithSearch, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
-import { getUserKey } from '../../lib/keys'
 
 export async function POST(req: NextRequest) {
   const userId = await getUserId()
@@ -13,13 +12,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAIs = await getGenAIsForRequest(req)
+  const { genAIs, groqKey, aiPref } = await resolveAiContext(req, userId)
   if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
-
-  const groqKey = await getUserKey(userId, 'groq')
-  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   try {
     // ── Detect international job location ─────────────────────────────────────
@@ -30,16 +26,21 @@ export async function POST(req: NextRequest) {
     const detectedCity = detectedIntl ? detectedIntl[1] : null
 
     // ── Step 1: parallel live searches ────────────────────────────────────────
+    // Rotate starting key per call so 3 parallel requests don't all land on key[0].
+    const searchKey = (i: number) => {
+      if (genAIs.length <= 1) return genAIs
+      return [...genAIs.slice(i % genAIs.length), ...genAIs.slice(0, i % genAIs.length)]
+    }
     const searches = await Promise.all([
       generateTextWithSearch(
-        genAIs,
+        searchKey(0),
         `Find real interview questions and experiences reported by candidates for "${role}" at "${company}". ` +
         `Include questions from Glassdoor, LinkedIn interview reviews, and Indeed. ` +
         `Summarise the most frequently mentioned questions and company-specific interview process details.`,
         groqKey,
       ),
       generateTextWithSearch(
-        genAIs,
+        searchKey(1),
         `What is the actual salary range for "${role}" at "${company}" in ${isInternational ? detectedCity! : 'Indonesia'}? ` +
         `Find real data from Glassdoor Salary, LinkedIn Salary Insights, JobStreet, Indeed, or Levels.fyi. ` +
         `Include monthly gross figures in local currency, broken down by seniority level if available. ` +
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
       ),
       isInternational
         ? generateTextWithSearch(
-            genAIs,
+            searchKey(2),
             `What is the monthly cost of living in ${detectedCity} for a single expat professional in 2024–2025? ` +
             `Break down: (1) rent for a 1-bedroom apartment, (2) groceries + dining out, (3) public transport pass, ` +
             `(4) utilities (electricity, water, internet), (5) miscellaneous (gym, entertainment, personal care). ` +

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref,
+  resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithProvider,
   isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE,
   isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE,
 } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
-import { getUserKey } from '../../lib/keys'
 
 type JobItem = { title: string; company: string; location: string; description: string; url: string }
 
@@ -94,11 +93,8 @@ export async function POST(req: NextRequest) {
   if (validUrls.length === 0)
     return NextResponse.json({ error: 'Tidak ada URL valid ditemukan.' }, { status: 400 })
 
-  const genAIs = await getGenAIsForRequest(req)
+  const { genAIs, groqKey, aiPref } = await resolveAiContext(req, userId)
   if (!genAIs.length) return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
-
-  const groqKey = await getUserKey(userId, 'groq')
-  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   // ── Fetch all job pages concurrently ────────────────────────────────────────
   const fetched = await Promise.all(validUrls.map(fetchJobData))

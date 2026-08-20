@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithProvider, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 import { getUserId } from '../../lib/session'
-import { getUserKey } from '../../lib/keys'
 
 // Fold a prior match analysis into concrete guidance for the improver.
 function analysisContext(analysis: any): string {
@@ -24,13 +23,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const genAIs = await getGenAIsForRequest(req)
+  const { genAIs, groqKey, aiPref } = await resolveAiContext(req, userId)
   if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
-
-  const groqKey = await getUserKey(userId, 'groq')
-  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   // Truncate — full CV text slows the model significantly without adding value
   const profileTrimmed = profile.slice(0, 6000)

@@ -29,14 +29,48 @@ export function getGenAI(keyOverride?: string | null): GoogleGenerativeAI | null
  */
 export async function getGenAIsForRequest(req: NextRequest): Promise<GoogleGenerativeAI[]> {
   const userId = await getUserId()
-  let keys: string[] = []
-  if (userId) keys = await getUserKeys(userId, 'gemini')
+  const keys = await resolveGeminiKeys(req, userId)
+  return keys.map(k => new GoogleGenerativeAI(k))
+}
+
+/** Resolve the ordered list of Gemini keys: user DB keys → request header → env. */
+async function resolveGeminiKeys(req: NextRequest, userId: string | null, dbKeys?: string[]): Promise<string[]> {
+  let keys = dbKeys ?? (userId ? await getUserKeys(userId, 'gemini') : [])
   if (!keys.length) {
     const headerKey = req.headers.get('x-gemini-key')
     if (headerKey?.trim()) keys = [headerKey.trim()]
   }
   if (!keys.length && KEY && !PLACEHOLDERS.includes(KEY.trim())) keys = [KEY]
-  return keys.map(k => new GoogleGenerativeAI(k))
+  return keys
+}
+
+/** Everything an AI route needs, fetched from the DB in a single parallel batch. */
+export interface AiContext {
+  genAIs: GoogleGenerativeAI[]
+  groqKey: string | null
+  aiPref: 'auto' | 'gemini' | 'groq'
+}
+
+/**
+ * Resolves Gemini clients, the Groq fallback key, and the user's model
+ * preference in ONE parallel DB batch. Callers pass a userId they already
+ * fetched (via getUserId) so we don't hit the session store twice.
+ */
+export async function resolveAiContext(req: NextRequest, userId: string | null): Promise<AiContext> {
+  let dbKeys: string[] = []
+  let groqKey: string | null = null
+  let aiPref: 'auto' | 'gemini' | 'groq' = 'auto'
+
+  if (userId) {
+    [dbKeys, groqKey, aiPref] = await Promise.all([
+      getUserKeys(userId, 'gemini'),
+      getUserKey(userId, 'groq'),
+      getUserAiModelPref(userId),
+    ])
+  }
+
+  const keys = await resolveGeminiKeys(req, userId, dbKeys)
+  return { genAIs: keys.map(k => new GoogleGenerativeAI(k)), groqKey, aiPref }
 }
 
 /**
@@ -116,7 +150,9 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
           temperature: 0.65,
           max_tokens: 8192,
         }),
-        signal: AbortSignal.timeout(120000),
+        // 45s ceiling: Groq is fast (usually <10s). A long hang here just delays
+        // the final Gemini retry — better to give up and move on than wait 2 min.
+        signal: AbortSignal.timeout(45000),
       })
       if (!res.ok) {
         const msg = await res.text().catch(() => '')
@@ -258,8 +294,8 @@ async function runWithFallback(
   // clears the window, so one extra pass frequently succeeds. Try every key —
   // any one of them may have recovered while Groq was being attempted.
   if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
-    console.warn('[gemini] Groq failed — final Gemini retry in 5s (rate-limit window may have reset)')
-    await sleep(5000)
+    console.warn('[gemini] Groq failed — final Gemini retry in 2s')
+    await sleep(2000)
     for (let ki = 0; ki < genAIs.length; ki++) {
       const genAI = genAIs[ki]
       const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
@@ -391,8 +427,8 @@ export async function generateTextWithUsage(
 
   // ── Final Gemini retry after Groq failure (cycle ALL keys) ───────────────
   if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
-    console.warn('[gemini] Groq failed — final Gemini retry in 5s')
-    await new Promise(r => setTimeout(r, 5000))
+    console.warn('[gemini] Groq failed — final Gemini retry in 2s')
+    await new Promise(r => setTimeout(r, 2000))
     for (let ki = 0; ki < genAIs.length; ki++) {
       const genAI = genAIs[ki]
       const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
@@ -443,30 +479,42 @@ export async function generateTextWithSearch(
   prompt: string,
   groqKey?: string | null,
 ): Promise<SearchGroundedResult> {
-  const genAI = Array.isArray(genAIInput) ? genAIInput[0] : genAIInput
+  const genAIs = Array.isArray(genAIInput) ? genAIInput : [genAIInput]
   const searchModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest']
-  for (const name of searchModels) {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: name,
-        tools: [{ googleSearch: {} } as any],
-      })
-      const result = await model.generateContent(prompt)
-      const text = result.response.text()
-      const grounding = (result.response.candidates?.[0] as any)?.groundingMetadata
-      const sources: { url: string; title: string }[] = (grounding?.groundingChunks ?? [])
-        .map((c: any) => ({ url: c.web?.uri ?? '', title: c.web?.title ?? '' }))
-        .filter((s: any) => s.url)
-      const searchQueries: string[] = grounding?.webSearchQueries ?? []
-      console.log(`[gemini-search] ${name} OK — ${sources.length} sources, queries: ${searchQueries.join(', ')}`)
-      return { text, sources, searchQueries, provider: 'gemini' as const }
-    } catch (e: any) {
-      console.warn(`[gemini-search] ${name} failed — ${e?.status} ${e?.message?.slice(0, 80)}`)
-      if (e?.status === 404 || e?.status === 429) continue
-      break
+  // Rotate through all keys on 429, just like runWithFallback does.
+  for (let ki = 0; ki < genAIs.length; ki++) {
+    const genAI = genAIs[ki]
+    const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
+    let keyRateLimited = false
+    for (const name of searchModels) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: name,
+          tools: [{ googleSearch: {} } as any],
+        })
+        const result = await model.generateContent(prompt)
+        const text = result.response.text()
+        const grounding = (result.response.candidates?.[0] as any)?.groundingMetadata
+        const sources: { url: string; title: string }[] = (grounding?.groundingChunks ?? [])
+          .map((c: any) => ({ url: c.web?.uri ?? '', title: c.web?.title ?? '' }))
+          .filter((s: any) => s.url)
+        const searchQueries: string[] = grounding?.webSearchQueries ?? []
+        console.log(`[gemini-search${keyLabel}] ${name} OK — ${sources.length} sources`)
+        return { text, sources, searchQueries, provider: 'gemini' as const }
+      } catch (e: any) {
+        console.warn(`[gemini-search${keyLabel}] ${name} failed — ${e?.status} ${e?.message?.slice(0, 80)}`)
+        if (e?.status === 404) continue  // model retired → next model
+        if (e?.status === 429) { keyRateLimited = true; continue }  // rate-limited → try next model, then next key
+        break  // other error → skip to fallback
+      }
     }
+    if (keyRateLimited && ki < genAIs.length - 1) {
+      console.warn(`[gemini-search${keyLabel}] rate-limited — rotating to key${ki + 2}`)
+      continue
+    }
+    break
   }
-  // Fallback: plain generation (Groq if available, otherwise Gemini no-search) — use all keys for rotation
+  // Fallback: plain generation with full key rotation + Groq
   const { text, provider } = await runWithFallback(genAIInput, [prompt], groqKey)
   return { text, sources: [], searchQueries: [], provider }
 }
