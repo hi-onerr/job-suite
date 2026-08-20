@@ -238,15 +238,16 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
         } catch (e: any) {
           keyErr = e; lastErr = e
-          if (isOverloadError(e) || isRateLimitError(e)) { keyHadTransient = true; hadTransientError = true }
-          console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 200)}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          const isTimeout = e?.name === 'AbortError'
+          if (isOverloadError(e) || isRateLimitError(e) || isTimeout) { keyHadTransient = true; hadTransientError = true }
+          console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || isTimeout) continue
           throw e
         }
       }
@@ -303,14 +304,14 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           return { text: result.response.text(), provider: 'gemini' }
         } catch (e: any) {
           lastErr = e
-          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status ?? e?.name}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError') continue
           throw e
         }
       }
@@ -379,7 +380,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
@@ -389,9 +390,10 @@ export async function generateTextWithUsage(
           return { text: result.response.text(), usage, provider: 'gemini' as const }
         } catch (e: any) {
           keyErr = e; lastErr = e
-          if (isOverloadError(e) || isRateLimitError(e)) hadTransientError = true
-          console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${e?.message?.slice(0, 200)}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          const isTimeout = e?.name === 'AbortError'
+          if (isOverloadError(e) || isRateLimitError(e) || isTimeout) hadTransientError = true
+          console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || isTimeout) continue
           throw e
         }
       }
@@ -436,7 +438,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           const meta = result.response.usageMetadata
@@ -446,8 +448,8 @@ export async function generateTextWithUsage(
           return { text: result.response.text(), usage, provider: 'gemini' as const }
         } catch (e: any) {
           lastErr = e
-          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e)) continue
+          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status ?? e?.name}`)
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError') continue
           throw e
         }
       }
@@ -492,7 +494,7 @@ export async function generateTextWithSearch(
         const model = genAI.getGenerativeModel({
           model: name,
           tools: [{ googleSearch: {} } as any],
-        })
+        }, { timeout: 30_000 })
         const result = await model.generateContent(prompt)
         const text = result.response.text()
         const grounding = (result.response.candidates?.[0] as any)?.groundingMetadata
