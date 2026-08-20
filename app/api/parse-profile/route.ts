@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../lib/db'
 import { getUserId } from '../../lib/session'
-import { getGenAIsForRequest, MISSING_KEY_MESSAGE, generateTextWithProvider, getUserAiModelPref, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
-import { getUserKey } from '../../lib/keys'
+import { resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithProvider, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
 
 // POST /api/parse-profile — use Gemini to turn the user's raw CV text into a
 // structured profile (JSON), persist it, and return it. Falls back to a 503 when
@@ -22,13 +21,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Profil masih kosong.' }, { status: 400 })
   }
 
-  const genAIs = await getGenAIsForRequest(req)
+  const { genAIs, groqKey, aiPref } = await resolveAiContext(req, userId)
   if (!genAIs.length) {
     return NextResponse.json({ error: MISSING_KEY_MESSAGE }, { status: 503 })
   }
-
-  const groqKey = await getUserKey(userId, 'groq')
-  const aiPref = userId ? await getUserAiModelPref(userId) : 'auto'
 
   try {
     const prompt = `You are a precise CV/resume parser. Extract the candidate's information from the CV text below into a clean, structured JSON object. Preserve the original wording; do NOT invent data. If a field is unknown, omit it or use an empty array. Merge lines that were wrapped mid-sentence. Split skills/languages/certifications into individual items (strip category labels like "Tools & Systems").
