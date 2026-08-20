@@ -221,7 +221,8 @@ async function runWithFallback(
 
   // Retry delays for overload errors (per-model, worth waiting out).
   // Rate-limit/quota errors skip delays and rotate to the next key immediately.
-  const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
+  // Kept short so users aren't waiting >10s before Groq fallback kicks in.
+  const OVERLOAD_DELAYS = [1_500, 4_000, 8_000]
 
   let lastErr: any
   let hadTransientError = false
@@ -364,7 +365,7 @@ export async function generateTextWithUsage(
     } catch { /* fall through to Gemini */ }
   }
 
-  const OVERLOAD_DELAYS = [3_000, 8_000, 15_000, 30_000]
+  const OVERLOAD_DELAYS = [1_500, 4_000, 8_000]
   let lastErr: any
   let hadTransientError = false
 
@@ -504,7 +505,7 @@ export async function generateTextWithSearch(
       } catch (e: any) {
         console.warn(`[gemini-search${keyLabel}] ${name} failed — ${e?.status} ${e?.message?.slice(0, 80)}`)
         if (e?.status === 404) continue  // model retired → next model
-        if (e?.status === 429) { keyRateLimited = true; continue }  // rate-limited → try next model, then next key
+        if (e?.status === 429) { keyRateLimited = true; break }  // rate-limited → rotate key immediately, no point trying more models
         break  // other error → skip to fallback
       }
     }
