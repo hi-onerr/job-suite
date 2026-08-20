@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../lib/db'
 import { getUserId } from '../../lib/session'
 import { resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithProvider, isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE, isAllProvidersFailedError, ALL_PROVIDERS_MESSAGE } from '../../lib/gemini'
+import { cleanPdfText } from '../../lib/text-utils'
 
 // POST /api/parse-profile — use Gemini to turn the user's raw CV text into a
 // structured profile (JSON), persist it, and return it. Falls back to a 503 when
@@ -20,6 +21,9 @@ export async function POST(req: NextRequest) {
   if (!text.trim()) {
     return NextResponse.json({ error: 'Profil masih kosong.' }, { status: 400 })
   }
+
+  // Fix PDF extraction artifacts (fi/fl ligature drops, hyphen spacing) before AI sees it
+  text = cleanPdfText(text)
 
   const { genAIs, groqKey, aiPref } = await resolveAiContext(req, userId)
   if (!genAIs.length) {
