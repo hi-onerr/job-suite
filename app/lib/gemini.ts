@@ -247,7 +247,12 @@ async function runWithFallback(
           const isTimeout = e?.name === 'AbortError'
           if (isOverloadError(e) || isRateLimitError(e) || isTimeout) { keyHadTransient = true; hadTransientError = true }
           console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || isTimeout) continue
+          // 404 = model retired → try next model.
+          // 429 = rate-limited → break model loop immediately; rate limits are project-level so
+          //   trying a different model with the same key wastes quota without any chance of success.
+          // overload / timeout → try next model (different model endpoints may be less loaded).
+          if (e?.status === 404 || isOverloadError(e) || isTimeout) continue
+          if (e?.status === 429) break  // rate-limited: skip remaining models, rotate key
           throw e
         }
       }
@@ -292,11 +297,11 @@ async function runWithFallback(
   }
 
   // ── Final Gemini retry after Groq failure (cycle ALL keys) ────────────────
-  // Rate-limits are per-minute windows. The time spent attempting Groq often
-  // clears the window, so one extra pass frequently succeeds. Try every key —
-  // any one of them may have recovered while Groq was being attempted.
-  if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
-    console.warn('[gemini] Groq failed — final Gemini retry in 2s')
+  // Only worthwhile for overload errors (503/timeout), where 2s may let the
+  // server recover. Skip when the last error is a rate-limit (429): the RPM
+  // window is 60s, so a 2s sleep changes nothing — just fail fast.
+  if (triedGroq && hadTransientError && !isRateLimitError(lastErr)) {
+    console.warn('[gemini] Groq failed — final Gemini retry in 2s (overload path)')
     await sleep(2000)
     for (let ki = 0; ki < genAIs.length; ki++) {
       const genAI = genAIs[ki]
@@ -393,7 +398,8 @@ export async function generateTextWithUsage(
           const isTimeout = e?.name === 'AbortError'
           if (isOverloadError(e) || isRateLimitError(e) || isTimeout) hadTransientError = true
           console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || isTimeout) continue
+          if (e?.status === 404 || isOverloadError(e) || isTimeout) continue
+          if (e?.status === 429) break  // rate-limited: skip remaining models, rotate key
           throw e
         }
       }
@@ -429,8 +435,8 @@ export async function generateTextWithUsage(
   }
 
   // ── Final Gemini retry after Groq failure (cycle ALL keys) ───────────────
-  if (triedGroq && (hadTransientError || isRateLimitError(lastErr))) {
-    console.warn('[gemini] Groq failed — final Gemini retry in 2s')
+  if (triedGroq && hadTransientError && !isRateLimitError(lastErr)) {
+    console.warn('[gemini] Groq failed — final Gemini retry in 2s (overload path)')
     await new Promise(r => setTimeout(r, 2000))
     for (let ki = 0; ki < genAIs.length; ki++) {
       const genAI = genAIs[ki]
