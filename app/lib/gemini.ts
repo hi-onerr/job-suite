@@ -150,9 +150,8 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
           temperature: 0.65,
           max_tokens: 8192,
         }),
-        // 45s ceiling: Groq is fast (usually <10s). A long hang here just delays
-        // the final Gemini retry — better to give up and move on than wait 2 min.
-        signal: AbortSignal.timeout(45000),
+        // 8s ceiling: keeps total Gemini+Groq chain within Vercel's 10s Hobby limit.
+        signal: AbortSignal.timeout(8000),
       })
       if (!res.ok) {
         const msg = await res.text().catch(() => '')
@@ -238,7 +237,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -247,12 +246,11 @@ async function runWithFallback(
           const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')
           if (isOverloadError(e) || isRateLimitError(e) || isTimeout) { keyHadTransient = true; hadTransientError = true }
           console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
-          // 404 = model retired → try next model.
-          // 429 = rate-limited → break model loop immediately; rate limits are project-level so
-          //   trying a different model with the same key wastes quota without any chance of success.
-          // overload / timeout → try next model (different model endpoints may be less loaded).
-          if (e?.status === 404 || isOverloadError(e) || isTimeout) continue
-          if (e?.status === 429) break  // rate-limited: skip remaining models, rotate key
+          // 404 = model retired → try next model (instant, no waste).
+          // timeout / 429 / overload → break immediately; with 7s budget any retry
+          //   burns the remaining Vercel window before Groq fallback can run.
+          if (e?.status === 404) continue
+          if (isTimeout || e?.status === 429 || isOverloadError(e)) break
           throw e
         }
       }
@@ -309,7 +307,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -385,7 +383,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
@@ -398,8 +396,8 @@ export async function generateTextWithUsage(
           const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')
           if (isOverloadError(e) || isRateLimitError(e) || isTimeout) hadTransientError = true
           console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
-          if (e?.status === 404 || isOverloadError(e) || isTimeout) continue
-          if (e?.status === 429) break  // rate-limited: skip remaining models, rotate key
+          if (e?.status === 404) continue
+          if (isTimeout || e?.status === 429 || isOverloadError(e)) break
           throw e
         }
       }
@@ -444,7 +442,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 30_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           const meta = result.response.usageMetadata
