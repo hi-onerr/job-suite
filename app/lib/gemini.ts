@@ -7,8 +7,8 @@ import { prisma } from './db'
 const KEY = process.env.GEMINI_API_KEY
 const PLACEHOLDERS = ['', 'PASTE_YOUR_KEY_HERE', 'your_gemini_api_key_here']
 
-// Current Gemini model. gemini-1.5-flash was retired (404). Override via env if needed.
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+// Current Gemini model. gemini-2.0-flash and gemini-2.5-flash were retired (404).
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
 
 /**
  * Returns a configured GoogleGenerativeAI client, or null when no usable key is
@@ -83,14 +83,11 @@ export async function getGenAIForRequest(req: NextRequest): Promise<GoogleGenera
   return genAIs[0] ?? null
 }
 
-// Candidate models tried in order — guards against a model being retired (404)
-// or having zero free-tier quota (429) for a given key. First that works wins.
-// gemini-2.5-flash and gemini-2.5-flash-lite are 404 (retired stable IDs).
-// gemini-flash-latest is a floating alias that currently resolves to 2.5 Flash.
+// Candidate models tried in order. gemini-2.0-flash and gemini-2.5-flash are
+// retired (404). gemini-3.6-flash is the current stable model as of Aug 2025.
 const MODEL_CANDIDATES = Array.from(new Set([
   GEMINI_MODEL,
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
+  'gemini-3.6-flash',
   'gemini-flash-latest',
 ]))
 
@@ -237,7 +234,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -307,7 +304,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -383,7 +380,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
@@ -442,7 +439,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           const meta = result.response.usageMetadata
@@ -487,7 +484,7 @@ export async function generateTextWithSearch(
   groqKey?: string | null,
 ): Promise<SearchGroundedResult> {
   const genAIs = Array.isArray(genAIInput) ? genAIInput : [genAIInput]
-  const searchModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest']
+  const searchModels = ['gemini-3.6-flash', 'gemini-flash-latest']
   // Rotate through all keys on 429, just like runWithFallback does.
   for (let ki = 0; ki < genAIs.length; ki++) {
     const genAI = genAIs[ki]
@@ -498,7 +495,8 @@ export async function generateTextWithSearch(
         const model = genAI.getGenerativeModel({
           model: name,
           tools: [{ googleSearch: {} } as any],
-        }, { timeout: 30_000 })
+          generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+        }, { timeout: 7_000 })
         const result = await model.generateContent(prompt)
         const text = result.response.text()
         const grounding = (result.response.candidates?.[0] as any)?.groundingMetadata
