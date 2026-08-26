@@ -92,10 +92,9 @@ const MODEL_CANDIDATES = Array.from(new Set([
 ]))
 
 // Groq models tried in order as fallback when all Gemini models are unavailable.
-// llama-3.1-70b-versatile was removed from Groq (returns 400); replaced with
-// llama-3.1-8b-instant which is fast, actively maintained, and has 128k context.
-// llama-3.3-70b-versatile was removed from Groq (returns 404).
-const GROQ_MODELS = ['llama-3.1-8b-instant', 'gemma2-9b-it']
+// All prior Llama 3.x / Gemma models were shutdown by Groq on 2026-08-16.
+// Current replacements as of 2026-08-27 per Groq deprecation docs.
+const GROQ_MODELS = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b']
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -114,11 +113,11 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
  *    sparse content (344 tokens for a full CV). 0.65 produces richer, more complete output
  *    while still being structured enough for JSON and format markers.
  */
-// Groq free tier per-request limits (approximate chars before hitting 413):
-// llama-3.3-70b-versatile ~25 000 chars, llama-3.1-8b-instant ~8 000 chars
+// Groq free tier per-request limits (approximate chars before hitting 413).
+// New gpt-oss models default to 20k; adjust if 413s appear in logs.
 const GROQ_MAX_CHARS: Record<string, number> = {
-  'llama-3.3-70b-versatile': 24_000,
-  'llama-3.1-8b-instant': 7_500,
+  'openai/gpt-oss-20b': 20_000,
+  'openai/gpt-oss-120b': 20_000,
 }
 
 async function tryGroqFallback(groqKey: string, prompt: string): Promise<string> {
