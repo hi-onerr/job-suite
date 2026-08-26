@@ -244,7 +244,7 @@ async function runWithFallback(
           return { text: result.response.text(), provider: 'gemini' }
         } catch (e: any) {
           keyErr = e; lastErr = e
-          const isTimeout = e?.name === 'AbortError'
+          const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')
           if (isOverloadError(e) || isRateLimitError(e) || isTimeout) { keyHadTransient = true; hadTransientError = true }
           console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
           // 404 = model retired → try next model.
@@ -316,7 +316,7 @@ async function runWithFallback(
         } catch (e: any) {
           lastErr = e
           console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status ?? e?.name}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError') continue
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')) continue
           throw e
         }
       }
@@ -395,7 +395,7 @@ export async function generateTextWithUsage(
           return { text: result.response.text(), usage, provider: 'gemini' as const }
         } catch (e: any) {
           keyErr = e; lastErr = e
-          const isTimeout = e?.name === 'AbortError'
+          const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')
           if (isOverloadError(e) || isRateLimitError(e) || isTimeout) hadTransientError = true
           console.warn(`[gemini${keyLabel}] ${name} failed after ${Date.now() - t}ms — status=${e?.status} msg=${(e?.message ?? e?.name)?.slice(0, 200)}`)
           if (e?.status === 404 || isOverloadError(e) || isTimeout) continue
@@ -455,7 +455,7 @@ export async function generateTextWithUsage(
         } catch (e: any) {
           lastErr = e
           console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status ?? e?.name}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError') continue
+          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')) continue
           throw e
         }
       }
