@@ -94,7 +94,8 @@ const MODEL_CANDIDATES = Array.from(new Set([
 // Groq models tried in order as fallback when all Gemini models are unavailable.
 // llama-3.1-70b-versatile was removed from Groq (returns 400); replaced with
 // llama-3.1-8b-instant which is fast, actively maintained, and has 128k context.
-const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
+// llama-3.3-70b-versatile was removed from Groq (returns 404).
+const GROQ_MODELS = ['llama-3.1-8b-instant', 'gemma2-9b-it']
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -153,8 +154,8 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
       if (!res.ok) {
         const msg = await res.text().catch(() => '')
         console.warn(`[groq] ${model} — ${res.status} ${msg.slice(0, 60)}`)
-        // 413 = too large, 429 = rate-limit, 5xx = server error → skip to next model
-        if (res.status === 413 || res.status === 429 || res.status >= 500) continue
+        // 404 = model removed, 413 = too large, 429 = rate-limit, 5xx = server error → skip
+        if (res.status === 404 || res.status === 413 || res.status === 429 || res.status >= 500) continue
         // 400 can mean the model was deprecated/deactivated — skip only for that case
         if (res.status === 400 && /model|deactivat|deprecat|not.*found|removed/i.test(msg)) continue
         throw new Error(`Groq ${res.status}`)
@@ -291,33 +292,6 @@ async function runWithFallback(
     }
   }
 
-  // ── Final Gemini retry after Groq failure (cycle ALL keys) ────────────────
-  // Only worthwhile for overload errors (503/timeout), where 2s may let the
-  // server recover. Skip when the last error is a rate-limit (429): the RPM
-  // window is 60s, so a 2s sleep changes nothing — just fail fast.
-  if (triedGroq && hadTransientError && !isRateLimitError(lastErr)) {
-    console.warn('[gemini] Groq failed — final Gemini retry in 2s (overload path)')
-    await sleep(2000)
-    for (let ki = 0; ki < genAIs.length; ki++) {
-      const genAI = genAIs[ki]
-      const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
-      for (const name of MODEL_CANDIDATES) {
-        const t = Date.now()
-        try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
-          const result = await model.generateContent(parts)
-          console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
-          return { text: result.response.text(), provider: 'gemini' }
-        } catch (e: any) {
-          lastErr = e
-          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status ?? e?.name}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')) continue
-          throw e
-        }
-      }
-    }
-  }
-
   // ── All providers exhausted ───────────────────────────────────────────────
   if (triedGroq) {
     const err = new Error('ALL_PROVIDERS_FAILED') as any
@@ -426,34 +400,6 @@ export async function generateTextWithUsage(
       return { text, usage: null, provider: 'groq' as const }
     } catch (groqErr: any) {
       console.warn('[groq] fallback failed:', groqErr?.message?.slice(0, 80))
-    }
-  }
-
-  // ── Final Gemini retry after Groq failure (cycle ALL keys) ───────────────
-  if (triedGroq && hadTransientError && !isRateLimitError(lastErr)) {
-    console.warn('[gemini] Groq failed — final Gemini retry in 2s (overload path)')
-    await new Promise(r => setTimeout(r, 2000))
-    for (let ki = 0; ki < genAIs.length; ki++) {
-      const genAI = genAIs[ki]
-      const keyLabel = genAIs.length > 1 ? ` key${ki + 1}/${genAIs.length}` : ''
-      for (const name of MODEL_CANDIDATES) {
-        const t = Date.now()
-        try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
-          const result = await model.generateContent([prompt])
-          console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
-          const meta = result.response.usageMetadata
-          const usage: TokenUsage | null = meta
-            ? { promptTokens: meta.promptTokenCount ?? 0, outputTokens: meta.candidatesTokenCount ?? 0, totalTokens: meta.totalTokenCount ?? 0, model: name }
-            : null
-          return { text: result.response.text(), usage, provider: 'gemini' as const }
-        } catch (e: any) {
-          lastErr = e
-          console.warn(`[gemini-final${keyLabel}] ${name} failed — ${e?.status ?? e?.name}`)
-          if (e?.status === 404 || e?.status === 429 || isOverloadError(e) || e?.name === 'AbortError' || e?.name === 'TimeoutError' || /aborted|timed?\s*out/i.test(e?.message || '')) continue
-          throw e
-        }
-      }
     }
   }
 
