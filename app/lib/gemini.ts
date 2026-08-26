@@ -234,7 +234,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -304,7 +304,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent(parts)
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -380,7 +380,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
@@ -439,7 +439,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
           const result = await model.generateContent([prompt])
           console.log(`[gemini-final${keyLabel}] ${name} OK in ${Date.now() - t}ms`)
           const meta = result.response.usageMetadata
@@ -495,7 +495,6 @@ export async function generateTextWithSearch(
         const model = genAI.getGenerativeModel({
           model: name,
           tools: [{ googleSearch: {} } as any],
-          generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
         }, { timeout: 7_000 })
         const result = await model.generateContent(prompt)
         const text = result.response.text()
