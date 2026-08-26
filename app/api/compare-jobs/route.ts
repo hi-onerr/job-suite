@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+
+export const maxDuration = 60
+
 import {
   resolveAiContext, MISSING_KEY_MESSAGE, generateTextWithProvider,
   isQuotaError, QUOTA_MESSAGE, isRateLimitError, RATE_LIMIT_MESSAGE, isOverloadError, OVERLOAD_MESSAGE,
