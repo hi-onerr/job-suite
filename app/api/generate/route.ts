@@ -226,42 +226,93 @@ Rules:
 `
 }
 
-// Some models (esp. thinking models like gemini-3.6-flash) wrap their response
-// in a JSON object or Python-style dict instead of returning plain marker text.
-// E.g.: {"CV":"NAME: Ferrari\nHEADLINE: ..."} or {'CV':'NAME: Ferrari\nHEADLINE: ...'}
-// This strips the wrapper and converts literal \n escape sequences to real newlines
-// so parseCv() in export.ts can parse the structured markers correctly.
+// Groq sometimes outputs a structured JSON object with NAME/HEADLINE/## keys
+// instead of the plain marker text parseCv() expects. This converts it back.
+function structuredCvJsonToMarkers(parsed: Record<string, unknown>): string {
+  const lines: string[] = []
+
+  if (parsed.NAME) lines.push(`NAME: ${parsed.NAME}`)
+  if (parsed.HEADLINE) lines.push(`HEADLINE: ${parsed.HEADLINE}`)
+  if (parsed.CONTACT) lines.push(`CONTACT: ${parsed.CONTACT}`)
+  lines.push('')
+
+  const skip = new Set(['NAME', 'HEADLINE', 'CONTACT'])
+  for (const [key, val] of Object.entries(parsed)) {
+    if (skip.has(key)) continue
+    // Normalise key: strip leading #/spaces to get the section title
+    const title = key.replace(/^[#\s]+/, '').trim()
+
+    if (typeof val === 'string') {
+      lines.push(`## ${title}`)
+      lines.push(val)
+      lines.push('')
+    } else if (Array.isArray(val)) {
+      lines.push(`## ${title}`)
+      for (const item of val) {
+        if (typeof item === 'string') {
+          lines.push(`- ${item}`)
+        } else if (item && typeof item === 'object') {
+          const entry = item as Record<string, unknown>
+          const entryTitle = (entry.TITLE || entry.DEGREE || entry['Project Name'] || '') as string
+          const company = (entry.COMPANY || entry.INSTITUTION || entry.ROLE || '') as string
+          const dates = (entry.DATES || '') as string
+          const location = (entry.LOCATION || '') as string
+          if (entryTitle) lines.push(`### ${entryTitle}`)
+          const meta = [company, dates, location].filter(Boolean)
+          if (meta.length) lines.push(meta.join(' | '))
+          const bullets = (entry.BULLETS || entry.DESCRIPTION || []) as unknown[]
+          if (Array.isArray(bullets)) {
+            for (const b of bullets) if (typeof b === 'string') lines.push(`- ${b}`)
+          }
+          lines.push('')
+        }
+      }
+      lines.push('')
+    }
+  }
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+// Some models wrap their response in a JSON object or Python-style dict instead
+// of returning plain marker text. This strips the wrapper so parseCv() can work.
 function unwrapContent(raw: string): string {
   const s = raw.trim()
 
-  // Strip a leading markdown code fence if present (```...``` or ```text...```)
+  // Strip markdown code fence (recurse in case inner content is also JSON)
   const fenced = s.match(/^```[a-z]*\n?([\s\S]*?)```\s*$/i)
-  if (fenced) return fenced[1].trim()
+  if (fenced) return unwrapContent(fenced[1].trim())
 
-  // Only attempt unwrapping when the whole response is a single object literal
   if (!s.startsWith('{') || !s.endsWith('}')) return raw
 
-  // Try standard JSON first (double-quoted keys/values)
+  // Try standard JSON
   try {
-    const parsed = JSON.parse(s)
-    const vals = Object.values(parsed)
-    if (vals.length === 1 && typeof vals[0] === 'string') return vals[0] as string
-    // Multi-key object — pick the longest string value (most likely the content)
-    const strVals = vals.filter((v): v is string => typeof v === 'string')
-    if (strVals.length) return strVals.reduce((a, b) => (a.length >= b.length ? a : b))
-  } catch { /* not valid JSON — try Python-dict below */ }
+    const parsed = JSON.parse(s) as Record<string, unknown>
+    const entries = Object.entries(parsed)
 
-  // Handle Python-style dict with single quotes: {'key':'value\nwith\nliteral\\n'}
+    // Single-key wrapper: {"CV": "NAME: ..."}
+    if (entries.length === 1 && typeof entries[0][1] === 'string') return entries[0][1] as string
+
+    // Structured CV JSON with NAME/HEADLINE or ## section keys
+    const isStructuredCv = entries.some(([k]) =>
+      k === 'NAME' || k === 'HEADLINE' || /^##/.test(k) || /^###/.test(k)
+    )
+    if (isStructuredCv) return structuredCvJsonToMarkers(parsed)
+
+    // Fallback: pick the longest string value
+    const strVals = entries.filter(([, v]) => typeof v === 'string').map(([, v]) => v as string)
+    if (strVals.length) return strVals.reduce((a, b) => (a.length >= b.length ? a : b))
+  } catch { /* not valid JSON */ }
+
+  // Python-style dict with single quotes
   try {
-    const jsonified = s
-      .replace(/'/g, '"')              // single → double quotes
-      .replace(/\\n/g, '\n')           // literal \n → real newline inside the value
-    const parsed = JSON.parse(jsonified)
+    const jsonified = s.replace(/'/g, '"').replace(/\\n/g, '\n')
+    const parsed = JSON.parse(jsonified) as Record<string, unknown>
     const vals = Object.values(parsed)
     if (vals.length === 1 && typeof vals[0] === 'string') return vals[0] as string
     const strVals = vals.filter((v): v is string => typeof v === 'string')
     if (strVals.length) return strVals.reduce((a, b) => (a.length >= b.length ? a : b))
-  } catch { /* not a parseable dict either */ }
+  } catch { /* not a parseable dict */ }
 
   return raw
 }
