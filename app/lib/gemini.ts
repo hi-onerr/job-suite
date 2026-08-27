@@ -111,16 +111,16 @@ const GEMINI_TIMEOUT_MS = 20_000
  * Key settings for quality parity with Gemini:
  *  - system prompt: Llama 3.3 needs explicit instruction-following guidance to
  *    honour strict format requirements (JSON, CV markers, word limits).
- *  - max_tokens 3 000: gpt-oss models have an ~8 192-token total context on the free tier;
- *    3 000 output + ~4 250 input stays safely under that ceiling and avoids HTTP 413.
- *    3 000 output tokens ≈ 2 250 words — more than enough for any CV, cover letter, or JSON response.
+ *  - max_tokens 4 096: gpt-oss models have an ~8 192-token total context on the free tier;
+ *    4 096 output + ~4 096 input ≈ 8 192 total stays right at the ceiling.
+ *    4 096 output tokens ≈ 3 000 words — enough for a full 2-page CV or detailed JSON response.
  *  - temperature 0.65: higher than 0.4 — low temp caused Llama to stop early with
  *    sparse content (344 tokens for a full CV). 0.65 produces richer, more complete output
  *    while still being structured enough for JSON and format markers.
  */
 // gpt-oss models appear to enforce an ~8 192-token total context on the free tier.
-// With ~250 system tokens + up to ~4 000 user tokens, setting max_tokens=3 000 keeps
-// the total under 8 192 and avoids HTTP 413. 12 000 chars ≈ 4 000 tokens of user input.
+// With ~250 system tokens + ~3 846 user tokens (12 000 chars), max_tokens=4 096 keeps
+// total ≈ 8 192 (right at the ceiling). Verified: 3 000 caused finish_reason=length.
 const GROQ_MAX_CHARS: Record<string, number> = {
   'openai/gpt-oss-20b': 12_000,
   'openai/gpt-oss-120b': 12_000,
@@ -135,7 +135,7 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
       '(1) Obey EVERY instruction in the user prompt exactly: section order, markers, bullet counts, page constraints, word limits.',
       '(2) CV/resume bullets must use strong action verbs and include specific, quantified achievements (numbers, %, outcomes) wherever the profile data supports it — never write vague or generic bullets.',
       '(3) Complete EVERY section listed in the prompt before stopping. Do not omit or abbreviate any requested section.',
-      '(4) JSON output: valid JSON only, zero markdown fences, zero extra commentary outside the JSON.',
+      '(4) Output format: follow exactly what the user prompt specifies — plain text markers when asked (NAME:, HEADLINE:, ##, ### etc.), valid JSON only when the prompt explicitly asks for JSON. NEVER wrap plain-text output in a JSON object or dict.',
       '(5) Document markers (NAME:, HEADLINE:, CONTACT:, ##, ###, SKILLS:, etc.) must appear exactly as specified — do not rename or reorder them.',
     ].join(' '),
   }
@@ -151,7 +151,7 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
           model,
           messages: [systemMessage, { role: 'user', content: truncatedPrompt }],
           temperature: 0.65,
-          max_tokens: 3000,
+          max_tokens: 4096,
         }),
         // 15s ceiling for Groq: larger models (120b) need more time with longer prompts.
         signal: AbortSignal.timeout(15_000),
@@ -241,7 +241,10 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: GEMINI_TIMEOUT_MS })
+          const model = genAI.getGenerativeModel(
+            { model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any },
+            { timeout: GEMINI_TIMEOUT_MS },
+          )
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -360,7 +363,10 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: GEMINI_TIMEOUT_MS })
+          const model = genAI.getGenerativeModel(
+            { model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any },
+            { timeout: GEMINI_TIMEOUT_MS },
+          )
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
