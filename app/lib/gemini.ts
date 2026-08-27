@@ -98,6 +98,11 @@ const GROQ_MODELS = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b']
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// gemini-3.6-flash is a thinking model — needs up to 15s for complex prompts.
+// Groq (primary) typically responds in 2-5s, so Gemini only runs as fallback where
+// a longer wait is acceptable. maxDuration=60 on all AI routes gives us the headroom.
+const GEMINI_TIMEOUT_MS = 20_000
+
 /**
  * Calls Groq's OpenAI-compatible API as a last-resort backup when Gemini is
  * overloaded or rate-limited. Text-only — no vision support on Groq yet.
@@ -106,19 +111,19 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
  * Key settings for quality parity with Gemini:
  *  - system prompt: Llama 3.3 needs explicit instruction-following guidance to
  *    honour strict format requirements (JSON, CV markers, word limits).
- *  - max_tokens 8192: safe ceiling for Groq's free tier (TPM limit is 6 000 tokens/min;
- *    requesting 32 768 caused HTTP 413). 8 192 output tokens ≈ 6 000 words — more than
- *    enough for any CV, cover letter, or JSON analysis response.
+ *  - max_tokens 3 000: gpt-oss models have an ~8 192-token total context on the free tier;
+ *    3 000 output + ~4 250 input stays safely under that ceiling and avoids HTTP 413.
+ *    3 000 output tokens ≈ 2 250 words — more than enough for any CV, cover letter, or JSON response.
  *  - temperature 0.65: higher than 0.4 — low temp caused Llama to stop early with
  *    sparse content (344 tokens for a full CV). 0.65 produces richer, more complete output
  *    while still being structured enough for JSON and format markers.
  */
-// Groq free tier per-request limits (chars) before hitting 413.
-// gpt-oss-20b: small context window — keep prompt tight.
-// gpt-oss-120b: larger model, allow more context.
+// gpt-oss models appear to enforce an ~8 192-token total context on the free tier.
+// With ~250 system tokens + up to ~4 000 user tokens, setting max_tokens=3 000 keeps
+// the total under 8 192 and avoids HTTP 413. 12 000 chars ≈ 4 000 tokens of user input.
 const GROQ_MAX_CHARS: Record<string, number> = {
-  'openai/gpt-oss-20b': 4_000,
-  'openai/gpt-oss-120b': 6_000,
+  'openai/gpt-oss-20b': 12_000,
+  'openai/gpt-oss-120b': 12_000,
 }
 
 async function tryGroqFallback(groqKey: string, prompt: string): Promise<string> {
@@ -146,10 +151,10 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
           model,
           messages: [systemMessage, { role: 'user', content: truncatedPrompt }],
           temperature: 0.65,
-          max_tokens: 7000,
+          max_tokens: 3000,
         }),
-        // 8s ceiling: keeps total Gemini+Groq chain within Vercel's 10s Hobby limit.
-        signal: AbortSignal.timeout(8000),
+        // 15s ceiling for Groq: larger models (120b) need more time with longer prompts.
+        signal: AbortSignal.timeout(15_000),
       })
       if (!res.ok) {
         const msg = await res.text().catch(() => '')
@@ -220,7 +225,7 @@ async function runWithFallback(
 
   // Retry delays for overload errors (per-model, worth waiting out).
   // Rate-limit/quota errors skip delays and rotate to the next key immediately.
-  // Kept short so users aren't waiting >10s before Groq fallback kicks in.
+  // Short enough to let the Groq primary fallback kick in quickly when Gemini is slow.
   const OVERLOAD_DELAYS = [1_500, 4_000, 8_000]
 
   let lastErr: any
@@ -237,7 +242,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: GEMINI_TIMEOUT_MS })
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -356,7 +361,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel({ model: name }, { timeout: 7_000 })
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: GEMINI_TIMEOUT_MS })
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
@@ -443,7 +448,7 @@ export async function generateTextWithSearch(
         const model = genAI.getGenerativeModel({
           model: name,
           tools: [{ googleSearch: {} } as any],
-        }, { timeout: 7_000 })
+        }, { timeout: GEMINI_TIMEOUT_MS })
         const result = await model.generateContent(prompt)
         const text = result.response.text()
         const grounding = (result.response.candidates?.[0] as any)?.groundingMetadata
