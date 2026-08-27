@@ -83,13 +83,10 @@ export async function getGenAIForRequest(req: NextRequest): Promise<GoogleGenera
   return genAIs[0] ?? null
 }
 
-// Candidate models tried in order. Non-thinking models first (faster on Vercel Hobby).
-// gemini-2.0-flash and gemini-2.5-flash are retired (404); code skips them automatically.
-// gemini-1.5-flash / gemini-2.0-flash-lite: non-thinking, respond in 2-4s.
-// gemini-3.6-flash / gemini-flash-latest: thinking model, kept as last-resort.
+// As of 2026-08-27, the only working Gemini model is gemini-3.6-flash.
+// All others (gemini-1.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite,
+// gemini-2.5-flash) return 404. gemini-3.6-flash is a thinking model (~7s).
 const MODEL_CANDIDATES = Array.from(new Set([
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
   GEMINI_MODEL,
   'gemini-flash-latest',
 ]))
