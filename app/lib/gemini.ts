@@ -241,10 +241,7 @@ async function runWithFallback(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel(
-            { model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any },
-            { timeout: GEMINI_TIMEOUT_MS },
-          )
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: GEMINI_TIMEOUT_MS })
           const result = await model.generateContent(parts)
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           return { text: result.response.text(), provider: 'gemini' }
@@ -363,10 +360,7 @@ export async function generateTextWithUsage(
       for (const name of MODEL_CANDIDATES) {
         const t = Date.now()
         try {
-          const model = genAI.getGenerativeModel(
-            { model: name, generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any },
-            { timeout: GEMINI_TIMEOUT_MS },
-          )
+          const model = genAI.getGenerativeModel({ model: name }, { timeout: GEMINI_TIMEOUT_MS })
           const result = await model.generateContent([prompt])
           console.log(`[gemini${keyLabel}] ${name} OK in ${Date.now() - t}ms (pass ${pass})`)
           const meta = result.response.usageMetadata
