@@ -146,7 +146,7 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
           model,
           messages: [systemMessage, { role: 'user', content: truncatedPrompt }],
           temperature: 0.65,
-          max_tokens: 4096,
+          max_tokens: 7000,
         }),
         // 8s ceiling: keeps total Gemini+Groq chain within Vercel's 10s Hobby limit.
         signal: AbortSignal.timeout(8000),
