@@ -362,6 +362,9 @@ export async function POST(req: NextRequest) {
     }
     const { text: rawContent, usage, provider } = await generateTextWithUsage(genAIs, prompt, groqKey, aiPref)
     const content = unwrapContent(rawContent)
+    const wasWrapped = content !== rawContent
+    const hasMarkers = /^##\s/m.test(content)
+    console.log(`[generate] ${type} via ${provider} — rawLen=${rawContent.length} cleanLen=${content.length} wasWrapped=${wasWrapped} hasMarkers=${hasMarkers} preview=${content.slice(0, 80).replace(/\n/g, '↵')}`)
     return NextResponse.json({ content, usage, provider })
   } catch (error: any) {
     console.error('Generation error:', error)
