@@ -83,11 +83,14 @@ export async function getGenAIForRequest(req: NextRequest): Promise<GoogleGenera
   return genAIs[0] ?? null
 }
 
-// Candidate models tried in order. gemini-2.0-flash and gemini-2.5-flash are
-// retired (404). gemini-3.6-flash is the current stable model as of Aug 2025.
+// Candidate models tried in order. Non-thinking models first (faster on Vercel Hobby).
+// gemini-2.0-flash and gemini-2.5-flash are retired (404); code skips them automatically.
+// gemini-1.5-flash / gemini-2.0-flash-lite: non-thinking, respond in 2-4s.
+// gemini-3.6-flash / gemini-flash-latest: thinking model, kept as last-resort.
 const MODEL_CANDIDATES = Array.from(new Set([
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash',
   GEMINI_MODEL,
-  'gemini-3.6-flash',
   'gemini-flash-latest',
 ]))
 
@@ -113,11 +116,12 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
  *    sparse content (344 tokens for a full CV). 0.65 produces richer, more complete output
  *    while still being structured enough for JSON and format markers.
  */
-// Groq free tier per-request limits (approximate chars before hitting 413).
-// New gpt-oss models default to 20k; adjust if 413s appear in logs.
+// Groq free tier per-request limits (chars) before hitting 413.
+// gpt-oss-20b: small context window — keep prompt tight.
+// gpt-oss-120b: larger model, allow more context.
 const GROQ_MAX_CHARS: Record<string, number> = {
-  'openai/gpt-oss-20b': 20_000,
-  'openai/gpt-oss-120b': 20_000,
+  'openai/gpt-oss-20b': 4_000,
+  'openai/gpt-oss-120b': 6_000,
 }
 
 async function tryGroqFallback(groqKey: string, prompt: string): Promise<string> {
@@ -145,7 +149,7 @@ async function tryGroqFallback(groqKey: string, prompt: string): Promise<string>
           model,
           messages: [systemMessage, { role: 'user', content: truncatedPrompt }],
           temperature: 0.65,
-          max_tokens: 8192,
+          max_tokens: 4096,
         }),
         // 8s ceiling: keeps total Gemini+Groq chain within Vercel's 10s Hobby limit.
         signal: AbortSignal.timeout(8000),
