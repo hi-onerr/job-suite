@@ -29,7 +29,7 @@ CONTACT: <City, Country> · <phone if available> · <email> · <linkedin>
 ## PROFESSIONAL EXPERIENCE
 ### <Job Title>
 <Company> | <Start – End> | <Location>
-- <achievement bullet: action verb first, quantified where possible>
+- <achievement bullet: action verb first; use specific numbers ONLY if stated in the profile>
 - <bullet>
 ### <Job Title>
 <Company> | <Start – End> | <Location>
@@ -61,7 +61,7 @@ Rules:
 - Use ONLY facts from the candidate profile; tailor wording to the job description, never invent experience.
 - Keep the markers EXACTLY: "NAME:", "HEADLINE:", "CONTACT:", "## SECTION", "### Entry Title", a "Company | Dates | Location" line under each entry, and "- " bullets.
 - Reverse-chronological experience. Mirror keywords from the job description naturally.
-- Bullets concise (1-2 lines), quantified where possible (e.g. 1,000+ tickets, 98% resolution rate).
+- Bullets concise (1-2 lines). Quantify ONLY with exact numbers explicitly stated in the candidate profile — NEVER invent percentages, dollar amounts, headcounts, timeframes, or performance scores. If no number is available, describe the outcome qualitatively (e.g. "significantly reduced", "improved", "across all business units").
 - No em dashes (—) in prose; use commas. An en dash (–) is allowed only inside date ranges.
 - Omit a whole section (and its "##" line) if the profile has nothing for it. Do not output placeholder text.
 `,
@@ -94,7 +94,7 @@ GREETING: Dear <Recipient first name, or "Hiring Manager">,
 
 <opening paragraph: name the role and a genuine hook>
 
-<paragraph: most relevant experience with quantified achievements matching key requirements>
+<paragraph: most relevant experience and impact matching key requirements — use specific numbers ONLY if they appear verbatim in the candidate profile, never invent metrics>
 
 <paragraph: specific skills plus why this company (research-based), cultural fit>
 
@@ -276,7 +276,7 @@ function pageGuidance(pages: number, type: string): string {
     return [
       `PAGE COUNT: EXACTLY 3 PAGES — THIS IS THE HIGHEST PRIORITY RULE. Apply these section requirements:`,
       `• PROFESSIONAL SUMMARY: 4–5 sentences, comprehensive.`,
-      `• PROFESSIONAL EXPERIENCE: include ALL roles from the profile. Write 5–6 detailed bullets per role, each 2 lines with context, action, and quantified result.`,
+      `• PROFESSIONAL EXPERIENCE: include ALL roles from the profile. Write 5–6 detailed bullets per role, each 2 lines with context, action, and outcome (quantify ONLY using numbers explicitly in the profile).`,
       `• KEY PROJECTS: include ALL projects from the profile.`,
       `• EDUCATION, SKILLS, CERTIFICATIONS: full detail, nothing omitted.`,
       `Every page must be completely filled — do not leave blank space.\n\n`,
