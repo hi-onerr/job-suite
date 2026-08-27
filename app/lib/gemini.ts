@@ -205,8 +205,10 @@ async function runWithFallback(
 ): Promise<{ text: string; provider: 'gemini' | 'groq' }> {
   const genAIs = Array.isArray(genAIInput) ? genAIInput : [genAIInput]
 
-  // When user prefers Groq and a text-only prompt is available, try Groq first.
-  if (preferredProvider === 'groq' && groqKey) {
+  // When Groq key is available and provider is auto or groq, try Groq first.
+  // Groq responds in 2-3s vs Gemini thinking model's 7s+, so this saves time.
+  // On 429/failure, falls through to Gemini automatically.
+  if ((preferredProvider === 'auto' || preferredProvider === 'groq') && groqKey) {
     const textPart = parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : null
     if (textPart) {
       try {
@@ -332,8 +334,8 @@ export async function generateTextWithUsage(
 ): Promise<{ text: string; usage: TokenUsage | null; provider: 'gemini' | 'groq' }> {
   const genAIs = Array.isArray(genAIInput) ? genAIInput : [genAIInput]
 
-  // Groq-first when user prefers it
-  if (preferredProvider === 'groq' && groqKey) {
+  // Groq-first when key is available (auto or groq preference) — faster than Gemini thinking model.
+  if ((preferredProvider === 'auto' || preferredProvider === 'groq') && groqKey) {
     try {
       const text = await tryGroqFallback(groqKey, prompt)
       return { text, usage: null, provider: 'groq' as const }
