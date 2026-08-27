@@ -17,7 +17,7 @@ ROLE: ${role}
 JOB DESCRIPTION:
 ${jobDesc}
 
-Output the CV in EXACTLY this structure and markers so it can be rendered into a formatted document. Output ONLY the CV — no commentary before or after.
+Output the CV in EXACTLY this structure and markers so it can be rendered into a formatted document. Output ONLY the plain text CV — no JSON, no dict, no code fences, no commentary before or after.
 
 NAME: <candidate full name>
 HEADLINE: <2-3 short role descriptors separated by " | ">
@@ -79,7 +79,7 @@ ${jobDesc}
 
 TODAY'S DATE: ${today}
 
-Output the cover letter in EXACTLY this structure and markers so it can be rendered into a formatted letter. Output ONLY the letter — no commentary before or after.
+Output the cover letter in EXACTLY this structure and markers so it can be rendered into a formatted letter. Output ONLY the plain text letter — no JSON, no dict, no code fences, no commentary before or after.
 
 NAME: <candidate full name>
 CONTACT: <City, Country> · <phone if available> · <email> · <linkedin>
@@ -226,6 +226,46 @@ Rules:
 `
 }
 
+// Some models (esp. thinking models like gemini-3.6-flash) wrap their response
+// in a JSON object or Python-style dict instead of returning plain marker text.
+// E.g.: {"CV":"NAME: Ferrari\nHEADLINE: ..."} or {'CV':'NAME: Ferrari\nHEADLINE: ...'}
+// This strips the wrapper and converts literal \n escape sequences to real newlines
+// so parseCv() in export.ts can parse the structured markers correctly.
+function unwrapContent(raw: string): string {
+  const s = raw.trim()
+
+  // Strip a leading markdown code fence if present (```...``` or ```text...```)
+  const fenced = s.match(/^```[a-z]*\n?([\s\S]*?)```\s*$/i)
+  if (fenced) return fenced[1].trim()
+
+  // Only attempt unwrapping when the whole response is a single object literal
+  if (!s.startsWith('{') || !s.endsWith('}')) return raw
+
+  // Try standard JSON first (double-quoted keys/values)
+  try {
+    const parsed = JSON.parse(s)
+    const vals = Object.values(parsed)
+    if (vals.length === 1 && typeof vals[0] === 'string') return vals[0] as string
+    // Multi-key object — pick the longest string value (most likely the content)
+    const strVals = vals.filter((v): v is string => typeof v === 'string')
+    if (strVals.length) return strVals.reduce((a, b) => (a.length >= b.length ? a : b))
+  } catch { /* not valid JSON — try Python-dict below */ }
+
+  // Handle Python-style dict with single quotes: {'key':'value\nwith\nliteral\\n'}
+  try {
+    const jsonified = s
+      .replace(/'/g, '"')              // single → double quotes
+      .replace(/\\n/g, '\n')           // literal \n → real newline inside the value
+    const parsed = JSON.parse(jsonified)
+    const vals = Object.values(parsed)
+    if (vals.length === 1 && typeof vals[0] === 'string') return vals[0] as string
+    const strVals = vals.filter((v): v is string => typeof v === 'string')
+    if (strVals.length) return strVals.reduce((a, b) => (a.length >= b.length ? a : b))
+  } catch { /* not a parseable dict either */ }
+
+  return raw
+}
+
 // Turn a prior match analysis into guidance the CV writer can act on.
 function atsGuidance(analysis: any): string {
   if (!analysis) return ''
@@ -320,7 +360,8 @@ export async function POST(req: NextRequest) {
     if (safeRequest) {
       prompt += `\nUSER CUSTOMIZATION REQUEST (apply only where consistent with producing an honest, professional document — do not override any truthfulness, format, or safety rules above):\n${safeRequest}\n`
     }
-    const { text: content, usage, provider } = await generateTextWithUsage(genAIs, prompt, groqKey, aiPref)
+    const { text: rawContent, usage, provider } = await generateTextWithUsage(genAIs, prompt, groqKey, aiPref)
+    const content = unwrapContent(rawContent)
     return NextResponse.json({ content, usage, provider })
   } catch (error: any) {
     console.error('Generation error:', error)
