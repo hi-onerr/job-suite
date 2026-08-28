@@ -6035,129 +6035,124 @@ function ArchiveTab() {
   const allKinds = [...new Set(items.map(i => i.kind))]
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4">
+    <div className="max-w-2xl mx-auto py-8 px-4">
+
       {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1">
           <FolderOpen size={20} className="text-primary" />
+          <h1 className="text-xl font-bold text-gray-800">Arsip PDF</h1>
         </div>
-        <div>
-          <h1 className="text-lg font-bold text-gray-800">Arsip PDF</h1>
-          <p className="text-sm text-gray-500">Semua dokumen yang pernah di-generate, tersimpan otomatis</p>
-        </div>
+        <p className="text-sm text-gray-500 ml-7">Dokumen yang pernah di-generate, tersimpan otomatis ke cloud</p>
       </div>
 
-      {/* Stats */}
-      {!loading && items.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          <div className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-gray-50 border border-gray-100 text-center">
-            <p className="text-2xl font-bold text-primary">{items.length}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Total File</p>
-          </div>
-          {stats.slice(0, 3).map(s => (
-            <div key={s.kind} className="p-3 rounded-xl bg-gray-50 border border-gray-100 text-center">
-              <p className="text-2xl font-bold text-gray-700">{s.count}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Search + Filter */}
-      {!loading && items.length > 0 && (
-        <div className="flex flex-col sm:flex-row gap-2 mb-4">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Cari nama file, perusahaan, atau posisi..."
-              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-            />
-          </div>
-          <div className="flex gap-1.5 flex-wrap">
-            <button onClick={() => setFilterKind('all')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterKind === 'all' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Semua</button>
-            {allKinds.map(k => (
-              <button key={k} onClick={() => setFilterKind(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterKind === k ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{kindLabel[k] || k}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {loading && (
-        <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
+        <div className="flex items-center justify-center py-24 text-gray-400 gap-2">
           <span className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
-          Memuat arsip...
+          <span className="text-sm">Memuat arsip...</span>
         </div>
       )}
 
       {!loading && items.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
-          <FolderOpen size={40} className="opacity-30" />
-          <p className="text-sm">Belum ada arsip. Generate PDF dari menu Analyze & Generate!</p>
+        <div className="flex flex-col items-center justify-center py-24 gap-3">
+          <FolderOpen size={44} className="text-gray-200" />
+          <p className="text-sm text-gray-400 text-center">Belum ada arsip.<br />Generate PDF dari menu <span className="font-medium text-gray-500">Analyze & Generate</span> dulu!</p>
         </div>
       )}
 
-      {!loading && items.length > 0 && filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
-          <Search size={28} className="opacity-30" />
-          <p className="text-sm">Tidak ada hasil untuk pencarian ini.</p>
-        </div>
-      )}
+      {!loading && items.length > 0 && (<>
 
-      {/* List */}
-      {!loading && filtered.length > 0 && (
+        {/* Stats chips */}
+        <div className="flex items-center gap-2 flex-wrap mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+          <span className="text-xs text-gray-500 font-medium mr-1">Total:</span>
+          <span className="text-xs font-bold text-primary bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">{items.length} file</span>
+          {stats.map(s => (
+            <span key={s.kind} className="text-xs text-gray-600 bg-white border border-gray-200 px-2.5 py-1 rounded-full">{s.count} {s.label}</span>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="relative mb-3">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Cari nama file, perusahaan, atau posisi..."
+            className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 bg-white"
+          />
+        </div>
+
+        {/* Filter pills */}
+        <div className="flex gap-1.5 flex-wrap mb-5">
+          {(['all', ...allKinds] as string[]).map(k => (
+            <button key={k} onClick={() => setFilterKind(k)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${filterKind === k ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'}`}>
+              {k === 'all' ? 'Semua' : kindLabel[k] || k}
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 gap-2 text-gray-400">
+            <Search size={28} className="opacity-30" />
+            <p className="text-sm">Tidak ada hasil untuk pencarian ini.</p>
+          </div>
+        )}
+
+        {/* File list */}
         <div className="space-y-2">
           {filtered.map(item => (
-            <div key={item.id} className="rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group bg-white overflow-hidden">
-              <div className="flex items-start gap-3 p-4">
-                {/* Icon */}
-                <button onClick={() => setPreview(preview?.id === item.id ? null : item)} className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center shrink-0 hover:bg-rose-100 transition-colors" title="Preview PDF">
-                  <FileText size={18} className="text-rose-500" />
+            <div key={item.id} className="rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-md hover:border-gray-200 transition-all group overflow-hidden">
+
+              {/* Card row */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                {/* PDF icon — click to preview */}
+                <button onClick={() => setPreview(preview?.id === item.id ? null : item)}
+                  className="w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center justify-center shrink-0 transition-colors" title="Preview">
+                  <FileText size={16} className="text-rose-500" />
                 </button>
+
                 {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <button onClick={() => setPreview(preview?.id === item.id ? null : item)} className="text-left w-full">
-                    <p className="text-sm font-semibold text-gray-800 truncate hover:text-primary transition-colors">{item.filename}</p>
-                  </button>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${kindColor[item.kind] || 'bg-gray-100 text-gray-600'}`}>{kindLabel[item.kind] || item.kind}</span>
-                    {item.company && <span className="text-xs text-gray-500">{item.company}</span>}
-                    {item.jobTitle && <span className="text-xs text-gray-400">· {item.jobTitle}</span>}
-                    {item.provider && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${item.provider === 'groq' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
-                        {item.provider === 'groq' ? 'Groq' : 'Gemini'}
-                      </span>
-                    )}
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setPreview(preview?.id === item.id ? null : item)}>
+                  <p className="text-sm font-semibold text-gray-800 truncate leading-tight">{item.filename}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${kindColor[item.kind] || 'bg-gray-100 text-gray-600'}`}>{kindLabel[item.kind] || item.kind}</span>
+                    {item.company && <span className="text-[11px] text-gray-500 truncate max-w-[120px]">{item.company}</span>}
+                    {item.jobTitle && <span className="text-[11px] text-gray-400 truncate max-w-[120px]">· {item.jobTitle}</span>}
+                    <span className="text-[11px] text-gray-300">·</span>
+                    <span className="text-[11px] text-gray-400">{new Date(item.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">{new Date(item.createdAt).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
+
                 {/* Actions */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button onClick={() => copyLink(item)} className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-all ${copied === item.id ? 'bg-green-50 text-green-600 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-blue-50 hover:text-primary hover:border-primary/30'}`} title="Copy link">
-                    {copied === item.id ? <><CheckCircle size={12} /> Copied!</> : <><Link size={12} /> Copy Link</>}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => copyLink(item)}
+                    className={`p-1.5 rounded-lg transition-colors ${copied === item.id ? 'text-green-500 bg-green-50' : 'text-gray-400 hover:text-primary hover:bg-blue-50'}`} title="Copy link">
+                    {copied === item.id ? <CheckCircle size={15} /> : <Link size={15} />}
                   </button>
                   {item.publicUrl && (
-                    <a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] px-2.5 py-1.5 rounded-lg transition-all shadow-sm">
-                      <Download size={12} /> Download
+                    <a href={item.publicUrl} target="_blank" rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-blue-50 transition-colors" title="Download">
+                      <Download size={15} />
                     </a>
                   )}
-                  <button onClick={() => deleteItem(item.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title="Hapus">
-                    <Trash2 size={14} />
+                  <button onClick={() => deleteItem(item.id)}
+                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100" title="Hapus">
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </div>
 
-              {/* Inline Preview */}
+              {/* Inline preview */}
               {preview?.id === item.id && item.publicUrl && (
                 <div className="border-t border-gray-100">
-                  <iframe src={item.publicUrl} className="w-full h-[70vh]" title={item.filename} />
+                  <iframe src={item.publicUrl} className="w-full h-[75vh]" title={item.filename} />
                 </div>
               )}
             </div>
           ))}
         </div>
-      )}
+      </>)}
     </div>
   )
 }
