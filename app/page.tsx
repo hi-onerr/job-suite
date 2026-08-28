@@ -2803,8 +2803,6 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                       // when its built-in save button is clicked.
                       const url = URL.createObjectURL(new File([blob], pdfName, { type: 'application/pdf' }))
                       setPdfPreview({ url, fileName: pdfName, blob, text: generatedContent, kind: activeGen! })
-                      // Archive to Supabase Storage in the background (fire-and-forget)
-                      archivePdf(blob, pdfName, activeGen!, lastProvider)
                     } catch (e: any) { showError(e?.message || 'Gagal membuat preview PDF. Coba lagi.') }
                     finally { setPdfGenerating(false) }
                   }}
@@ -3015,6 +3013,24 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                 <span className="text-sm font-semibold text-gray-800 truncate">{pdfPreview.fileName}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-3">
+                {/* Simpan ke Arsip — explicit, dengan cek duplikat */}
+                <button
+                  onClick={async () => {
+                    if (!pdfPreview?.blob) return
+                    // Load history if not yet loaded
+                    if (!cvHistory.length) await loadCvHistory()
+                    const duplicate = cvHistory.find(x => x.filename === pdfPreview.fileName)
+                    if (duplicate) {
+                      const ok = window.confirm(`File "${pdfPreview.fileName}" sudah ada di arsip.\n\nKlik OK untuk buat versi baru, atau Cancel untuk pakai yang lama.`)
+                      if (!ok) return
+                    }
+                    await archivePdf(pdfPreview.blob, pdfPreview.fileName, pdfPreview.kind, lastProvider)
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 hover:border-primary/40 hover:text-primary hover:bg-blue-50 px-3 py-2 rounded-lg transition-all"
+                  title="Simpan ke arsip online"
+                >
+                  <FolderOpen size={13} /> Simpan ke Arsip
+                </button>
                 <button
                   disabled={pdfGenerating}
                   onClick={async () => {
