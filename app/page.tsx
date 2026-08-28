@@ -2460,10 +2460,14 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
           const item = { id: '', filename, publicUrl: '', kind, company: company || null, jobTitle: role || null, provider: prov || null, createdAt: new Date().toISOString() }
           return [item, ...prev]
         })
-        // Refresh to get real id + url
         loadCvHistory()
+      } else {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        showToast(`Arsip gagal: ${err?.error || res.status}`, 'error')
       }
-    } catch { /* silent fail */ }
+    } catch (e: any) {
+      showToast(`Arsip gagal: ${e?.message || 'network error'}`, 'error')
+    }
   }
 
   const deleteArchive = async (id: string) => {
