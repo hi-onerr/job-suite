@@ -32,15 +32,25 @@ export async function POST(req: NextRequest) {
     const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100)
     const storagePath = `${userId}/${ts}-${safe}`
 
-    const publicUrl = await uploadPdf(buffer, storagePath)
+    console.log('[cv-archive] uploading to storage:', storagePath)
+    let publicUrl: string
+    try {
+      publicUrl = await uploadPdf(buffer, storagePath)
+      console.log('[cv-archive] storage OK:', publicUrl)
+    } catch (storageErr: any) {
+      console.error('[cv-archive] storage FAILED:', storageErr?.message)
+      return NextResponse.json({ error: `Storage: ${storageErr?.message}` }, { status: 500 })
+    }
 
+    console.log('[cv-archive] saving to DB')
     const record = await prisma.cvArchive.create({
       data: { userId, filename, storageKey: storagePath, publicUrl, kind, company, jobTitle, provider },
     })
+    console.log('[cv-archive] DB saved:', record.id)
 
     return NextResponse.json({ id: record.id, publicUrl })
   } catch (e: any) {
-    console.error('[cv-archive] POST error:', e?.message)
+    console.error('[cv-archive] POST error:', e?.message, e?.code)
     return NextResponse.json({ error: e?.message || 'Upload failed' }, { status: 500 })
   }
 }
