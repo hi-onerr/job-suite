@@ -2430,6 +2430,47 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; blob: Blob; text: string; kind: DocKind } | null>(null)
   const [pdfGenerating, setPdfGenerating] = useState(false)
   const [pendingGenType, setPendingGenType] = useState<DocType | null>(null)
+  // CV archive history
+  type ArchiveItem = { id: string; filename: string; publicUrl: string; kind: string; company?: string | null; jobTitle?: string | null; provider?: string | null; createdAt: string }
+  const [cvHistory, setCvHistory] = useState<ArchiveItem[]>([])
+  const [showCvHistory, setShowCvHistory] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  const loadCvHistory = async () => {
+    setHistoryLoading(true)
+    try {
+      const res = await fetch('/api/cv-archive')
+      if (res.ok) setCvHistory(await res.json())
+    } catch { /* ignore */ } finally { setHistoryLoading(false) }
+  }
+
+  const archivePdf = async (blob: Blob, filename: string, kind: string, prov?: string | null) => {
+    try {
+      const form = new FormData()
+      form.append('pdf', new File([blob], filename, { type: 'application/pdf' }))
+      form.append('filename', filename)
+      form.append('kind', kind)
+      if (company) form.append('company', company)
+      if (role) form.append('jobTitle', role)
+      if (prov) form.append('provider', prov)
+      const res = await fetch('/api/cv-archive', { method: 'POST', body: form })
+      if (res.ok) {
+        showToast('CV tersimpan ke arsip online', 'success')
+        setCvHistory(prev => {
+          const item = { id: '', filename, publicUrl: '', kind, company: company || null, jobTitle: role || null, provider: prov || null, createdAt: new Date().toISOString() }
+          return [item, ...prev]
+        })
+        // Refresh to get real id + url
+        loadCvHistory()
+      }
+    } catch { /* silent fail */ }
+  }
+
+  const deleteArchive = async (id: string) => {
+    if (!id) return
+    await fetch(`/api/cv-archive?id=${id}`, { method: 'DELETE' })
+    setCvHistory(prev => prev.filter(x => x.id !== id))
+  }
 
   const runImprove = async () => {
     if (!jobDesc || !profile) return
@@ -2753,6 +2794,8 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                       // when its built-in save button is clicked.
                       const url = URL.createObjectURL(new File([blob], pdfName, { type: 'application/pdf' }))
                       setPdfPreview({ url, fileName: pdfName, blob, text: generatedContent, kind: activeGen! })
+                      // Archive to Supabase Storage in the background (fire-and-forget)
+                      archivePdf(blob, pdfName, activeGen!, lastProvider)
                     } catch (e: any) { showError(e?.message || 'Gagal membuat preview PDF. Coba lagi.') }
                     finally { setPdfGenerating(false) }
                   }}
@@ -2765,6 +2808,13 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] shadow-sm hover:shadow-md px-3.5 py-1.5 rounded-lg transition-all"
                 >
                   <FileText size={12} /> DOCX
+                </button>
+                <button
+                  onClick={() => { setShowCvHistory(true); loadCvHistory() }}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-primary border border-gray-200 hover:border-primary/40 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all"
+                  title="Lihat arsip PDF yang pernah digenerate"
+                >
+                  <FolderOpen size={12} /> Arsip
                 </button>
               </>}
             </div>
@@ -2995,6 +3045,89 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
               className="flex-1 w-full rounded-b-2xl"
               title="PDF Preview"
             />
+          </div>
+        </div>
+      )}
+
+      {/* ── CV Archive History Modal ────────────────────────────────────────── */}
+      {showCvHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={e => { if (e.target === e.currentTarget) setShowCvHistory(false) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <div className="flex items-center gap-2">
+                <FolderOpen size={18} className="text-primary" />
+                <h2 className="text-base font-semibold text-gray-800">Arsip PDF</h2>
+                <span className="text-xs text-gray-400 font-normal">({cvHistory.length} file)</span>
+              </div>
+              <button onClick={() => setShowCvHistory(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-4">
+              {historyLoading && (
+                <div className="flex items-center justify-center py-12 text-gray-400 text-sm gap-2">
+                  <span className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
+                  Memuat arsip...
+                </div>
+              )}
+              {!historyLoading && cvHistory.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
+                  <FolderOpen size={32} className="opacity-40" />
+                  <p className="text-sm">Belum ada arsip PDF. Generate PDF pertama kamu!</p>
+                </div>
+              )}
+              {!historyLoading && cvHistory.length > 0 && (
+                <div className="space-y-2">
+                  {cvHistory.map(item => (
+                    <div key={item.id || item.createdAt} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors group">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center mt-0.5">
+                        <FileText size={14} className="text-rose-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{item.filename}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {item.company && <span className="text-xs text-gray-500">{item.company}</span>}
+                          {item.jobTitle && <span className="text-xs text-gray-400">· {item.jobTitle}</span>}
+                          <span className="text-xs text-gray-300">·</span>
+                          <span className="text-xs text-gray-400">{new Date(item.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          {item.provider && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${item.provider === 'groq' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
+                              {item.provider === 'groq' ? 'Groq' : 'Gemini'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {item.publicUrl && (
+                          <a
+                            href={item.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                          >
+                            <Download size={12} /> Download
+                          </a>
+                        )}
+                        {item.id && (
+                          <button
+                            onClick={() => deleteArchive(item.id)}
+                            className="p-1 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
+                            title="Hapus dari arsip"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t bg-gray-50 rounded-b-2xl">
+              <p className="text-[11px] text-gray-400 text-center">PDF tersimpan otomatis setiap kali kamu generate PDF. File tersimpan di Supabase Storage.</p>
+            </div>
           </div>
         </div>
       )}
