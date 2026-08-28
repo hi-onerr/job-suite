@@ -5991,6 +5991,10 @@ function ArchiveTab() {
   type ArchiveItem = { id: string; filename: string; publicUrl: string; kind: string; company?: string | null; jobTitle?: string | null; provider?: string | null; createdAt: string }
   const [items, setItems] = useState<ArchiveItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterKind, setFilterKind] = useState<string>('all')
+  const [preview, setPreview] = useState<ArchiveItem | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/cv-archive')
@@ -6003,13 +6007,37 @@ function ArchiveTab() {
   const deleteItem = async (id: string) => {
     await fetch(`/api/cv-archive?id=${id}`, { method: 'DELETE' })
     setItems(prev => prev.filter(x => x.id !== id))
+    if (preview?.id === id) setPreview(null)
+  }
+
+  const copyLink = async (item: ArchiveItem) => {
+    await navigator.clipboard.writeText(item.publicUrl)
+    setCopied(item.id)
+    setTimeout(() => setCopied(null), 2000)
   }
 
   const kindLabel: Record<string, string> = { cv: 'CV', coverletter: 'Cover Letter', email: 'Email', followup: 'Follow-up', thankyou: 'Thank You', linkedin: 'LinkedIn' }
+  const kindColor: Record<string, string> = { cv: 'bg-blue-50 text-blue-700', coverletter: 'bg-purple-50 text-purple-700', email: 'bg-green-50 text-green-700', followup: 'bg-orange-50 text-orange-700', thankyou: 'bg-pink-50 text-pink-700', linkedin: 'bg-sky-50 text-sky-700' }
+
+  // Stats
+  const stats = Object.entries(kindLabel).map(([k, label]) => ({ kind: k, label, count: items.filter(i => i.kind === k).length })).filter(s => s.count > 0)
+
+  // Filtered list
+  const filtered = items.filter(item => {
+    if (filterKind !== 'all' && item.kind !== filterKind) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return item.filename.toLowerCase().includes(q) || (item.company || '').toLowerCase().includes(q) || (item.jobTitle || '').toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  const allKinds = [...new Set(items.map(i => i.kind))]
 
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
-      <div className="flex items-center gap-3 mb-6">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-5">
         <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
           <FolderOpen size={20} className="text-primary" />
         </div>
@@ -6017,8 +6045,44 @@ function ArchiveTab() {
           <h1 className="text-lg font-bold text-gray-800">Arsip PDF</h1>
           <p className="text-sm text-gray-500">Semua dokumen yang pernah di-generate, tersimpan otomatis</p>
         </div>
-        <span className="ml-auto text-sm text-gray-400">{items.length} file</span>
       </div>
+
+      {/* Stats */}
+      {!loading && items.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          <div className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-gray-50 border border-gray-100 text-center">
+            <p className="text-2xl font-bold text-primary">{items.length}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Total File</p>
+          </div>
+          {stats.slice(0, 3).map(s => (
+            <div key={s.kind} className="p-3 rounded-xl bg-gray-50 border border-gray-100 text-center">
+              <p className="text-2xl font-bold text-gray-700">{s.count}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Search + Filter */}
+      {!loading && items.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Cari nama file, perusahaan, atau posisi..."
+              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+            />
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={() => setFilterKind('all')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterKind === 'all' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Semua</button>
+            {allKinds.map(k => (
+              <button key={k} onClick={() => setFilterKind(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterKind === k ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{kindLabel[k] || k}</button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
@@ -6030,44 +6094,66 @@ function ArchiveTab() {
       {!loading && items.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
           <FolderOpen size={40} className="opacity-30" />
-          <p className="text-sm">Belum ada arsip. Generate PDF pertama kamu dari menu Analyze & Generate!</p>
+          <p className="text-sm">Belum ada arsip. Generate PDF dari menu Analyze & Generate!</p>
         </div>
       )}
 
-      {!loading && items.length > 0 && (
-        <div className="space-y-3">
-          {items.map(item => (
-            <div key={item.id} className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group bg-white">
-              <div className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
-                <FileText size={18} className="text-rose-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{item.filename}</p>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{kindLabel[item.kind] || item.kind}</span>
-                  {item.company && <span className="text-xs text-gray-500">{item.company}</span>}
-                  {item.jobTitle && <span className="text-xs text-gray-400">· {item.jobTitle}</span>}
-                  {item.provider && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${item.provider === 'groq' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
-                      {item.provider === 'groq' ? 'Groq' : 'Gemini'}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-400 mt-1">{new Date(item.createdAt).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {item.publicUrl && (
-                  <a href={item.publicUrl} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] px-3 py-1.5 rounded-lg transition-all shadow-sm">
-                    <Download size={13} /> Download
-                  </a>
-                )}
-                <button onClick={() => deleteItem(item.id)}
-                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                  title="Hapus dari arsip">
-                  <Trash2 size={15} />
+      {!loading && items.length > 0 && filtered.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
+          <Search size={28} className="opacity-30" />
+          <p className="text-sm">Tidak ada hasil untuk pencarian ini.</p>
+        </div>
+      )}
+
+      {/* List */}
+      {!loading && filtered.length > 0 && (
+        <div className="space-y-2">
+          {filtered.map(item => (
+            <div key={item.id} className="rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group bg-white overflow-hidden">
+              <div className="flex items-start gap-3 p-4">
+                {/* Icon */}
+                <button onClick={() => setPreview(preview?.id === item.id ? null : item)} className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center shrink-0 hover:bg-rose-100 transition-colors" title="Preview PDF">
+                  <FileText size={18} className="text-rose-500" />
                 </button>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <button onClick={() => setPreview(preview?.id === item.id ? null : item)} className="text-left w-full">
+                    <p className="text-sm font-semibold text-gray-800 truncate hover:text-primary transition-colors">{item.filename}</p>
+                  </button>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${kindColor[item.kind] || 'bg-gray-100 text-gray-600'}`}>{kindLabel[item.kind] || item.kind}</span>
+                    {item.company && <span className="text-xs text-gray-500">{item.company}</span>}
+                    {item.jobTitle && <span className="text-xs text-gray-400">· {item.jobTitle}</span>}
+                    {item.provider && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${item.provider === 'groq' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
+                        {item.provider === 'groq' ? 'Groq' : 'Gemini'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">{new Date(item.createdAt).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                {/* Actions */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => copyLink(item)} className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-all ${copied === item.id ? 'bg-green-50 text-green-600 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-blue-50 hover:text-primary hover:border-primary/30'}`} title="Copy link">
+                    {copied === item.id ? <><CheckCircle size={12} /> Copied!</> : <><Link size={12} /> Copy Link</>}
+                  </button>
+                  {item.publicUrl && (
+                    <a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] px-2.5 py-1.5 rounded-lg transition-all shadow-sm">
+                      <Download size={12} /> Download
+                    </a>
+                  )}
+                  <button onClick={() => deleteItem(item.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title="Hapus">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
+
+              {/* Inline Preview */}
+              {preview?.id === item.id && item.publicUrl && (
+                <div className="border-t border-gray-100">
+                  <iframe src={item.publicUrl} className="w-full h-[70vh]" title={item.filename} />
+                </div>
+              )}
             </div>
           ))}
         </div>
