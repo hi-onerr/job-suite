@@ -191,6 +191,7 @@ const TABS: Tab[] = [
   { id: 'prep', label: 'Interview Prep', subtitle: 'Riset perusahaan & latihan pertanyaan interview', icon: <Brain size={18} /> },
   { id: 'worldclock', label: 'World Clock', subtitle: 'Jam kerja global — waktu terbaik apply loker luar negeri', icon: <Globe size={18} /> },
   { id: 'profile', label: 'My Profile', subtitle: 'CV & profil yang dipakai AI sebagai konteks', icon: <User size={18} /> },
+  { id: 'archive', label: 'Arsip PDF', subtitle: 'Semua CV & dokumen yang pernah di-generate', icon: <FolderOpen size={18} /> },
   { id: 'settings', label: 'Settings', subtitle: 'API key & impor data', icon: <Settings size={18} /> },
 ]
 
@@ -1168,6 +1169,7 @@ function AppShell() {
                 />
               )}
               {activeTab === 'worldclock' && <WorldClockTab />}
+              {activeTab === 'archive' && <ArchiveTab />}
               {activeTab === 'settings' && (
                 <SettingsTab configuredKeys={configuredKeys} onSaved={refreshKeys} dark={dark} toggleTheme={toggleTheme} />
               )}
@@ -5978,6 +5980,96 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── ARCHIVE TAB ───────────────────────────────────────────────────────────────
+function ArchiveTab() {
+  type ArchiveItem = { id: string; filename: string; publicUrl: string; kind: string; company?: string | null; jobTitle?: string | null; provider?: string | null; createdAt: string }
+  const [items, setItems] = useState<ArchiveItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/cv-archive')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setItems(data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const deleteItem = async (id: string) => {
+    await fetch(`/api/cv-archive?id=${id}`, { method: 'DELETE' })
+    setItems(prev => prev.filter(x => x.id !== id))
+  }
+
+  const kindLabel: Record<string, string> = { cv: 'CV', coverletter: 'Cover Letter', email: 'Email', followup: 'Follow-up', thankyou: 'Thank You', linkedin: 'LinkedIn' }
+
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+          <FolderOpen size={20} className="text-primary" />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold text-gray-800">Arsip PDF</h1>
+          <p className="text-sm text-gray-500">Semua dokumen yang pernah di-generate, tersimpan otomatis</p>
+        </div>
+        <span className="ml-auto text-sm text-gray-400">{items.length} file</span>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
+          <span className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
+          Memuat arsip...
+        </div>
+      )}
+
+      {!loading && items.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
+          <FolderOpen size={40} className="opacity-30" />
+          <p className="text-sm">Belum ada arsip. Generate PDF pertama kamu dari menu Analyze & Generate!</p>
+        </div>
+      )}
+
+      {!loading && items.length > 0 && (
+        <div className="space-y-3">
+          {items.map(item => (
+            <div key={item.id} className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group bg-white">
+              <div className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+                <FileText size={18} className="text-rose-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800 truncate">{item.filename}</p>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{kindLabel[item.kind] || item.kind}</span>
+                  {item.company && <span className="text-xs text-gray-500">{item.company}</span>}
+                  {item.jobTitle && <span className="text-xs text-gray-400">· {item.jobTitle}</span>}
+                  {item.provider && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${item.provider === 'groq' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
+                      {item.provider === 'groq' ? 'Groq' : 'Gemini'}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{new Date(item.createdAt).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {item.publicUrl && (
+                  <a href={item.publicUrl} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-[#1a4470] hover:to-[#0d9494] px-3 py-1.5 rounded-lg transition-all shadow-sm">
+                    <Download size={13} /> Download
+                  </a>
+                )}
+                <button onClick={() => deleteItem(item.id)}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                  title="Hapus dari arsip">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
