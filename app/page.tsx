@@ -2445,6 +2445,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   }
 
   const archivePdf = async (blob: Blob, filename: string, kind: string, prov?: string | null) => {
+    console.log('[archive] starting upload:', filename, kind)
     try {
       const form = new FormData()
       form.append('pdf', new File([blob], filename, { type: 'application/pdf' }))
@@ -2463,10 +2464,12 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
         loadCvHistory()
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-        showToast(`Arsip gagal: ${err?.error || res.status}`, 'error')
+        console.error('[archive] API error:', res.status, err)
+        showError(`Arsip gagal: ${err?.error || res.status}`)
       }
     } catch (e: any) {
-      showToast(`Arsip gagal: ${e?.message || 'network error'}`, 'error')
+      console.error('[archive] fetch error:', e)
+      showError(`Arsip gagal: ${e?.message || 'network error'}`)
     }
   }
 
