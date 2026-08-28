@@ -6011,7 +6011,8 @@ function ArchiveTab() {
   }
 
   const copyLink = async (item: ArchiveItem) => {
-    await navigator.clipboard.writeText(item.publicUrl)
+    const shortUrl = `${window.location.origin}/cv/${item.id}`
+    await navigator.clipboard.writeText(shortUrl)
     setCopied(item.id)
     setTimeout(() => setCopied(null), 2000)
   }
