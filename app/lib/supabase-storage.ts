@@ -1,4 +1,4 @@
-const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/$/, '')
+const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/^﻿/, '').replace(/\/$/, '')
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET = 'cv-archives'
 
