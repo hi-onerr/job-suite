@@ -98,10 +98,10 @@ const GROQ_MODELS = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b']
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-// gemini-3.6-flash is a thinking model — needs up to 15s for complex prompts.
-// Groq (primary) typically responds in 2-5s, so Gemini only runs as fallback where
-// a longer wait is acceptable. maxDuration=60 on all AI routes gives us the headroom.
-const GEMINI_TIMEOUT_MS = 20_000
+// gemini-3.6-flash is a thinking model — needs up to 35s for complex prompts like
+// full CV generation. All AI routes have maxDuration=60s, so 45s timeout still leaves
+// 15s for a Groq fallback call if Gemini fails. Keep Gemini as the primary path.
+const GEMINI_TIMEOUT_MS = 45_000
 
 /**
  * Calls Groq's OpenAI-compatible API as a last-resort backup when Gemini is
