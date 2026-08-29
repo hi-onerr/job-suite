@@ -1119,14 +1119,14 @@ function AppShell() {
           </div>
         </header>
 
-        <main className="p-5 md:p-8">
+        <main className={activeTab === 'archive' ? 'h-[calc(100vh-4rem)] overflow-hidden' : 'p-5 md:p-8'}>
           {loading ? (
             <div className="card text-center py-16">
               <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-3" />
               <p className="text-sm text-gray-500">{t(lang, 'loading')}</p>
             </div>
           ) : (
-            <div className="animate-fade-in">
+            <div className={`animate-fade-in${activeTab === 'archive' ? ' h-full' : ''}`}>
               {activeTab === 'tracker' && (
                 <TrackerTab
                   jobs={jobs}
@@ -6052,124 +6052,167 @@ function ArchiveTab() {
   const allKinds = [...new Set(items.map(i => i.kind))]
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
+    <div className="flex h-full overflow-hidden">
 
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <FolderOpen size={20} className="text-primary" />
-          <h1 className="text-xl font-bold text-gray-800">Arsip PDF</h1>
-        </div>
-        <p className="text-sm text-gray-500 ml-7">Dokumen yang pernah di-generate, tersimpan otomatis ke cloud</p>
-      </div>
+      {/* ── LEFT PANEL: List ── */}
+      <div className="w-80 shrink-0 border-r border-gray-100 flex flex-col overflow-hidden bg-white">
 
-      {loading && (
-        <div className="flex items-center justify-center py-24 text-gray-400 gap-2">
-          <span className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
-          <span className="text-sm">Memuat arsip...</span>
-        </div>
-      )}
-
-      {!loading && items.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-24 gap-3">
-          <FolderOpen size={44} className="text-gray-200" />
-          <p className="text-sm text-gray-400 text-center">Belum ada arsip.<br />Generate PDF dari menu <span className="font-medium text-gray-500">Analyze & Generate</span> dulu!</p>
-        </div>
-      )}
-
-      {!loading && items.length > 0 && (<>
-
-        {/* Stats chips */}
-        <div className="flex items-center gap-2 flex-wrap mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
-          <span className="text-xs text-gray-500 font-medium mr-1">Total:</span>
-          <span className="text-xs font-bold text-primary bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">{items.length} file</span>
-          {stats.map(s => (
-            <span key={s.kind} className="text-xs text-gray-600 bg-white border border-gray-200 px-2.5 py-1 rounded-full">{s.count} {s.label}</span>
-          ))}
+        {/* Header */}
+        <div className="px-4 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2 mb-0.5">
+            <FolderOpen size={17} className="text-primary" />
+            <h1 className="text-sm font-bold text-gray-800">Arsip PDF</h1>
+          </div>
+          <p className="text-[11px] text-gray-400 ml-6">Tersimpan otomatis ke cloud</p>
         </div>
 
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nama file, perusahaan, atau posisi..."
-            className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 bg-white"
-          />
-        </div>
-
-        {/* Filter pills */}
-        <div className="flex gap-1.5 flex-wrap mb-5">
-          {(['all', ...allKinds] as string[]).map(k => (
-            <button key={k} onClick={() => setFilterKind(k)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${filterKind === k ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'}`}>
-              {k === 'all' ? 'Semua' : kindLabel[k] || k}
-            </button>
-          ))}
-        </div>
-
-        {filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 gap-2 text-gray-400">
-            <Search size={28} className="opacity-30" />
-            <p className="text-sm">Tidak ada hasil untuk pencarian ini.</p>
+        {loading && (
+          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+            <span className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
+            <span className="text-xs">Memuat arsip...</span>
           </div>
         )}
 
-        {/* File list */}
-        <div className="space-y-2">
-          {filtered.map(item => (
-            <div key={item.id} className="rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-md hover:border-gray-200 transition-all group overflow-hidden">
+        {!loading && items.length === 0 && (
+          <div className="flex flex-col items-center justify-center flex-1 gap-3 px-6">
+            <FolderOpen size={40} className="text-gray-200" />
+            <p className="text-xs text-gray-400 text-center">Belum ada arsip.<br />Generate PDF dari menu <span className="font-medium text-gray-500">Analyze & Generate</span> dulu!</p>
+          </div>
+        )}
 
-              {/* Card row */}
-              <div className="flex items-center gap-3 px-4 py-3">
-                {/* PDF icon — click to preview */}
-                <button onClick={() => setPreview(preview?.id === item.id ? null : item)}
-                  className="w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center justify-center shrink-0 transition-colors" title="Preview">
-                  <FileText size={16} className="text-rose-500" />
-                </button>
+        {!loading && items.length > 0 && (<>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setPreview(preview?.id === item.id ? null : item)}>
-                  <p className="text-sm font-semibold text-gray-800 truncate leading-tight">{item.filename}</p>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${kindColor[item.kind] || 'bg-gray-100 text-gray-600'}`}>{kindLabel[item.kind] || item.kind}</span>
-                    {item.company && <span className="text-[11px] text-gray-500 truncate max-w-[120px]">{item.company}</span>}
-                    {item.jobTitle && <span className="text-[11px] text-gray-400 truncate max-w-[120px]">· {item.jobTitle}</span>}
-                    <span className="text-[11px] text-gray-300">·</span>
-                    <span className="text-[11px] text-gray-400">{new Date(item.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          {/* Stats */}
+          <div className="px-3 pt-3 pb-2 flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-primary bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">{items.length} file</span>
+            {stats.map(s => (
+              <span key={s.kind} className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">{s.count} {s.label}</span>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Cari file, perusahaan..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Filter pills */}
+          <div className="px-3 pb-2 flex gap-1 flex-wrap">
+            {(['all', ...allKinds] as string[]).map(k => (
+              <button key={k} onClick={() => setFilterKind(k)}
+                className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-all border ${filterKind === k ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+                {k === 'all' ? 'Semua' : kindLabel[k] || k}
+              </button>
+            ))}
+          </div>
+
+          {/* Scrollable list */}
+          <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
+            {filtered.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-gray-300">
+                <Search size={22} className="opacity-50" />
+                <p className="text-xs">Tidak ada hasil.</p>
+              </div>
+            )}
+            {filtered.map(item => (
+              <div key={item.id} onClick={() => setPreview(item)}
+                className={`rounded-xl border px-3 py-2.5 cursor-pointer transition-all group ${preview?.id === item.id ? 'border-primary/40 bg-blue-50/70 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'}`}>
+
+                <div className="flex items-start gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center shrink-0 mt-0.5">
+                    <FileText size={13} className="text-rose-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-semibold text-gray-800 truncate leading-tight">{item.filename}</p>
+                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${kindColor[item.kind] || 'bg-gray-100 text-gray-600'}`}>{kindLabel[item.kind] || item.kind}</span>
+                      {item.company && <span className="text-[10px] text-gray-400 truncate max-w-[90px]">{item.company}</span>}
+                    </div>
+                    <p className="text-[10px] text-gray-300 mt-0.5">{new Date(item.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => copyLink(item)}
-                    className={`p-1.5 rounded-lg transition-colors ${copied === item.id ? 'text-green-500 bg-green-50' : 'text-gray-400 hover:text-primary hover:bg-blue-50'}`} title="Copy link">
-                    {copied === item.id ? <CheckCircle size={15} /> : <Link size={15} />}
+                {/* Actions — show on hover */}
+                <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={e => { e.stopPropagation(); copyLink(item) }}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] transition-colors ${copied === item.id ? 'text-green-600 bg-green-50' : 'text-gray-500 hover:text-primary hover:bg-blue-50'}`}>
+                    {copied === item.id ? <CheckCircle size={10} /> : <Link size={10} />}
+                    {copied === item.id ? 'Disalin' : 'Copy link'}
                   </button>
                   {item.publicUrl && (
-                    <a href={item.publicUrl} target="_blank" rel="noopener noreferrer"
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-blue-50 transition-colors" title="Download">
-                      <Download size={15} />
+                    <a href={item.publicUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-gray-500 hover:text-primary hover:bg-blue-50 transition-colors">
+                      <Download size={10} />
+                      Download
                     </a>
                   )}
-                  <button onClick={() => deleteItem(item.id)}
-                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100" title="Hapus">
-                    <Trash2 size={15} />
+                  <button onClick={e => { e.stopPropagation(); deleteItem(item.id) }}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors ml-auto">
+                    <Trash2 size={10} />
+                    Hapus
                   </button>
                 </div>
               </div>
+            ))}
+          </div>
+        </>)}
+      </div>
 
-              {/* Inline preview */}
-              {preview?.id === item.id && item.publicUrl && (
-                <div className="border-t border-gray-100">
-                  <iframe src={item.publicUrl} className="w-full h-[75vh]" title={item.filename} />
+      {/* ── RIGHT PANEL: Preview ── */}
+      <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+        {!preview ? (
+          <div className="flex flex-col items-center justify-center flex-1 gap-3 text-gray-300">
+            <FileText size={52} />
+            <p className="text-sm">Pilih dokumen untuk preview</p>
+          </div>
+        ) : (
+          <>
+            {/* Preview toolbar */}
+            <div className="px-5 py-2.5 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800 truncate">{preview.filename}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${kindColor[preview.kind] || 'bg-gray-100 text-gray-600'}`}>{kindLabel[preview.kind] || preview.kind}</span>
+                  {preview.company && <span className="text-xs text-gray-400">{preview.company}</span>}
+                  {preview.jobTitle && <span className="text-xs text-gray-400">· {preview.jobTitle}</span>}
                 </div>
-              )}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => copyLink(preview)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${copied === preview.id ? 'text-green-600 bg-green-50 border-green-200' : 'text-gray-600 bg-white border-gray-200 hover:border-primary/40 hover:text-primary'}`}>
+                  {copied === preview.id ? <CheckCircle size={12} /> : <Link size={12} />}
+                  {copied === preview.id ? 'Disalin!' : 'Copy Link'}
+                </button>
+                {preview.publicUrl && (
+                  <a href={preview.publicUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:border-primary/40 hover:text-primary transition-colors">
+                    <Download size={12} />
+                    Download
+                  </a>
+                )}
+                <button onClick={() => setPreview(null)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" title="Tutup preview">
+                  <X size={14} />
+                </button>
+              </div>
             </div>
-          ))}
-        </div>
-      </>)}
+
+            {/* PDF iframe */}
+            {preview.publicUrl
+              ? <iframe src={preview.publicUrl} className="flex-1 w-full border-0" title={preview.filename} />
+              : <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">URL tidak tersedia</div>
+            }
+          </>
+        )}
+      </div>
+
     </div>
   )
 }

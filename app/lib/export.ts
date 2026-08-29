@@ -203,12 +203,12 @@ function richHtml(s: string): string {
   return esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 }
 
-function buildHtmlDoc(text: string, kind: DocKind, isArabic: boolean, fileName?: string): string {
+export function buildHtmlDoc(text: string, kind: DocKind, isArabic: boolean, fileName?: string): string {
   const dir = isArabic ? 'rtl' : 'ltr'
   const fontFace = isArabic ? `
     @font-face { font-family: 'NotoNaskhArabic'; src: url('/fonts/NotoNaskhArabic-Regular.ttf'); font-weight: 400; }
     @font-face { font-family: 'NotoNaskhArabic'; src: url('/fonts/NotoNaskhArabic-Bold.ttf'); font-weight: 700; }` : ''
-  const font = isArabic ? "'NotoNaskhArabic', 'Arial', sans-serif" : "'Arial', sans-serif"
+  const font = isArabic ? "'NotoNaskhArabic', 'Arial', sans-serif" : "'Times New Roman', Times, serif"
 
   let body = ''
 
@@ -430,7 +430,6 @@ async function loadPdfMake() {
     }
   }
 
-  // Arabic documents use printHtmlDoc (browser-based) — pdfmake only handles Latin content
   pdfMake.fonts = {
     ...(pdfMake.fonts || {}),
     Roboto: {
@@ -456,24 +455,8 @@ function buildDocDefinition(text: string, kind: DocKind) {
 }
 
 export async function getPdfBlob(text: string, kind: DocKind = 'cv'): Promise<Blob> {
-  const pdfMake = await loadPdfMake()
-  return new Promise<Blob>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('PDF generation timed out — coba lagi')), 20000)
-    try {
-      pdfMake.createPdf(buildDocDefinition(text, kind)).getBlob((raw: Blob) => {
-        clearTimeout(timeout)
-        if (raw && raw.size > 100) {
-          const blob = raw.type === 'application/pdf' ? raw : new Blob([raw], { type: 'application/pdf' })
-          resolve(blob)
-        } else {
-          reject(new Error('PDF kosong atau corrupt — coba lagi'))
-        }
-      })
-    } catch (e: any) {
-      clearTimeout(timeout)
-      reject(e)
-    }
-  })
+  const { getPdfBlobReact } = await import('./cv-pdf')
+  return getPdfBlobReact(text, kind)
 }
 
 export async function exportPdf(text: string, fileName: string, kind: DocKind = 'cv') {
@@ -490,11 +473,13 @@ export async function exportPdf(text: string, fileName: string, kind: DocKind = 
 const RIGHT_TAB = 9360
 const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
 
+const TNR = 'Times New Roman'
+
 function inlineRuns(text: string, boldColor?: string): TextRun[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
   return parts.map(part => {
     const m = part.match(/^\*\*([^*]+)\*\*$/)
-    return new TextRun({ text: m ? m[1] : part, bold: !!m, ...(m && boldColor ? { color: boldColor } : {}) })
+    return new TextRun({ text: m ? m[1] : part, bold: !!m, font: TNR, ...(m && boldColor ? { color: boldColor } : {}) })
   })
 }
 
@@ -593,12 +578,18 @@ function coverLetterChildren(cl: CoverLetter): Paragraph[] {
   return ch
 }
 
+const DOCX_DEFAULT_STYLES = {
+  default: {
+    document: { run: { font: TNR, size: 20 } },
+  },
+}
+
 export async function exportDocx(text: string, fileName: string, kind: DocKind = 'cv') {
   let children: (Paragraph | Table)[]
   if (kind === 'cv') { const cv = parseCv(text); children = cv ? cvChildren(cv) : genericParagraphs(text) }
   else if (kind === 'coverletter') { const cl = parseCoverLetter(text); children = cl ? coverLetterChildren(cl) : genericParagraphs(text) }
   else children = genericParagraphs(text)
-  const doc = new Document({ sections: [{ children }] })
+  const doc = new Document({ styles: DOCX_DEFAULT_STYLES, sections: [{ children }] })
   const blob = await Packer.toBlob(doc)
   saveAs(blob, fileName.endsWith('.docx') ? fileName : `${fileName}.docx`)
 }
