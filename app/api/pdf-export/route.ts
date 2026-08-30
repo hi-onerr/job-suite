@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
   const formData = await req.formData()
   const base64 = formData.get('data') as string
-  const filename = ((formData.get('filename') as string) || 'document.pdf').replace(/"/g, '')
+  const filename = ((formData.get('filename') as string) || 'document.pdf').replace(/["\r\n]/g, '')
 
   if (!base64) return new NextResponse('Missing data', { status: 400 })
   if (base64.length > MAX_B64_LEN) return new NextResponse('Payload too large', { status: 413 })

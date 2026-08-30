@@ -129,10 +129,15 @@ export async function POST(req: NextRequest) {
   const { url } = await req.json()
   if (!url || typeof url !== 'string') return NextResponse.json({ error: 'URL required' }, { status: 400 })
 
-  // Validate URL scheme — only allow https to prevent SSRF via file://, ftp://, etc.
+  // Validate URL — only HTTPS, and block private/loopback IP ranges to prevent SSRF.
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:') return NextResponse.json({ error: 'Only HTTPS URLs are supported' }, { status: 400 })
+    const h = parsed.hostname.toLowerCase()
+    const privateHost = /^(localhost|.*\.local)$/.test(h)
+      || /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.)/.test(h)
+      || /^(::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)/.test(h)
+    if (privateHost) return NextResponse.json({ error: 'URL not allowed' }, { status: 400 })
   } catch { return NextResponse.json({ error: 'Invalid URL' }, { status: 400 }) }
 
   // ── 0. Early-exit for known blocked domains ───────────────────────────────
