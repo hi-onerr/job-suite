@@ -10,6 +10,7 @@ import {
   Sparkles, TrendingUp, Target, Send, Award, MapPin, Phone, Linkedin, GraduationCap, Lightbulb,
   Pencil, BadgeCheck, Languages, Download, Search, Building2, Sun, Moon, FolderOpen, Link,
   RefreshCw, ClipboardCopy, ArrowLeftRight, CalendarDays, ChevronLeft, Globe, X, Scale, Lock,
+  Bell, BellOff,
 } from 'lucide-react'
 import { exportDocx, exportFileName, guessCandidateName, getPdfBlob, printPdf, printHtmlDoc, hasArabicScript, exportPrepPdf, exportPrepDocx, type PrepExportData, type DocKind } from './lib/export'
 import { showError, showSuccess, showToast } from './lib/notify'
@@ -85,6 +86,8 @@ interface JobApplication {
   deadline?: string
   notes?: string
   salary?: string
+  reminderAt?: string | null
+  reminderSent?: boolean
   documents?: AppDocument[] | null
   prep?: PrepResult | null
   createdAt: string
@@ -1774,7 +1777,15 @@ function TrackerTab({ jobs, onUpdate, onDelete, onSelect, selectedJob, onSwitchT
                       <p className="font-medium text-gray-900 text-sm truncate">{decodeHtml(job.role)}</p>
                       <p className="text-xs text-gray-500">{decodeHtml(job.company)} · {job.location}</p>
                     </div>
-                    <ChevronRight size={16} className="text-gray-400 flex-shrink-0 mt-1" />
+                    <div className="flex items-center gap-1 flex-shrink-0 mt-1">
+                      {job.reminderAt && !job.reminderSent && (
+                        <span title="Pengingat aktif"><Bell size={13} className="text-violet-500" /></span>
+                      )}
+                      {job.reminderSent && (
+                        <span title="Pengingat sudah terkirim"><BellOff size={13} className="text-gray-300" /></span>
+                      )}
+                      <ChevronRight size={16} className="text-gray-400" />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1934,6 +1945,91 @@ function KanbanBoard({ jobs, onUpdate, onOpen }: {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── REMINDER SECTION ─────────────────────────────────────────────────────────
+function utcToWIBInput(iso: string): string {
+  const d = new Date(iso)
+  d.setUTCHours(d.getUTCHours() + 7)
+  return d.toISOString().slice(0, 16)
+}
+
+function wibInputToUTC(local: string): string {
+  // local is "YYYY-MM-DDTHH:MM" interpreted as WIB (UTC+7)
+  const d = new Date(local + ':00Z')
+  d.setUTCHours(d.getUTCHours() - 7)
+  return d.toISOString()
+}
+
+function ReminderSection({ job, onUpdate }: {
+  job: JobApplication
+  onUpdate: (id: string, updates: Partial<JobApplication>) => void
+}) {
+  const [value, setValue] = useState(() =>
+    job.reminderAt ? utcToWIBInput(job.reminderAt) : ''
+  )
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(job.reminderAt ? utcToWIBInput(job.reminderAt) : '')
+  }, [job.reminderAt])
+
+  const save = async () => {
+    setSaving(true)
+    await onUpdate(job.id, { reminderAt: value ? wibInputToUTC(value) : null })
+    setSaving(false)
+    showToast(value ? 'Pengingat disimpan' : 'Pengingat dihapus', 'success')
+  }
+
+  const clear = async () => {
+    setValue('')
+    setSaving(true)
+    await onUpdate(job.id, { reminderAt: null })
+    setSaving(false)
+    showToast('Pengingat dihapus', 'success')
+  }
+
+  return (
+    <div>
+      <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1">
+        <Bell size={12} /> Pengingat Email (WIB)
+      </label>
+      {job.reminderSent && (
+        <div className="flex items-center gap-2 mb-2 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+          <BellOff size={12} />
+          <span>Pengingat sudah terkirim.</span>
+          <button onClick={clear} className="text-violet-500 hover:underline ml-auto">Atur ulang</button>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          type="datetime-local"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          className="input text-sm flex-1"
+          min={new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+        />
+        <button
+          onClick={save}
+          disabled={saving}
+          className="btn-primary text-xs px-3 py-2 flex items-center gap-1.5 shrink-0"
+        >
+          <Bell size={12} className={saving ? 'animate-pulse' : ''} />
+          {saving ? '...' : 'Simpan'}
+        </button>
+        {value && !saving && (
+          <button onClick={clear} className="text-gray-400 hover:text-red-400 transition-colors" title="Hapus pengingat">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {value && !job.reminderSent && (
+        <p className="text-[10px] text-violet-500 mt-1 flex items-center gap-1">
+          <Bell size={9} /> Kamu akan dapat email pengingat pada waktu ini
+        </p>
+      )}
     </div>
   )
 }
@@ -2210,6 +2306,9 @@ function JobDetail({ job, onUpdate, onDelete, profile }: {
           className="textarea text-sm"
         />
       </div>
+
+      {/* Reminder */}
+      <ReminderSection job={job} onUpdate={onUpdate} />
 
       {/* Job Desc preview */}
       {job.jobDesc && (

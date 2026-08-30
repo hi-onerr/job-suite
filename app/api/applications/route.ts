@@ -16,14 +16,14 @@ export async function GET() {
 
 // analysis and documents are stored as JSON strings; expose them as parsed
 // values to the client.
-function withParsedAnalysis<T extends { analysis: string | null; documents?: string | null; prep?: string | null }>(app: T) {
+function withParsedAnalysis<T extends { analysis: string | null; documents?: string | null; prep?: string | null; reminderAt?: Date | null }>(app: T) {
   let analysis = null
   if (app.analysis) { try { analysis = JSON.parse(app.analysis) } catch { /* ignore */ } }
   let documents = null
   if (app.documents) { try { documents = JSON.parse(app.documents) } catch { /* ignore */ } }
   let prep = null
   if (app.prep) { try { prep = JSON.parse(app.prep) } catch { /* ignore */ } }
-  return { ...app, analysis, documents, prep }
+  return { ...app, analysis, documents, prep, reminderAt: app.reminderAt?.toISOString() ?? null }
 }
 
 // POST /api/applications — create a new application for the current user.

@@ -6,6 +6,7 @@ import { getUserId } from '../../../lib/session'
 const UPDATABLE = [
   'company', 'role', 'location', 'url', 'jobDesc', 'status',
   'matchScore', 'appliedDate', 'deadline', 'notes', 'salary',
+  'reminderSent',
 ] as const
 
 // PATCH /api/applications/:id — update fields on one of the user's applications.
@@ -22,6 +23,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ('analysis' in body) data.analysis = body.analysis ? JSON.stringify(body.analysis) : null
   if ('documents' in body) data.documents = body.documents ? JSON.stringify(body.documents) : null
   if ('prep' in body) data.prep = body.prep ? JSON.stringify(body.prep) : null
+  // reminderAt is a DateTime; accept ISO string or null.
+  if ('reminderAt' in body) {
+    data.reminderAt = body.reminderAt ? new Date(body.reminderAt) : null
+    // Reset reminderSent when a new reminder time is set
+    if (body.reminderAt) data.reminderSent = false
+  }
 
   try {
     // Verify ownership without updateMany (HTTP mode doesn't support transactions).
@@ -41,7 +48,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (updated.documents) { try { documents = JSON.parse(updated.documents) } catch { /* ignore */ } }
     let prep = null
     if (updated.prep) { try { prep = JSON.parse(updated.prep) } catch { /* ignore */ } }
-    return NextResponse.json({ ...updated, analysis, documents, prep })
+    return NextResponse.json({
+      ...updated,
+      analysis,
+      documents,
+      prep,
+      reminderAt: updated.reminderAt?.toISOString() ?? null,
+    })
   } catch (e: any) {
     console.error('[PATCH /applications/:id] DB error:', e?.message ?? e)
     return NextResponse.json({ error: e?.message ?? 'Internal server error' }, { status: 500 })

@@ -66,6 +66,8 @@ model Application {
   notes         String?
   salary        String?
   cvVersionId   String? // which CvVersion was used to generate docs for this application
+  reminderAt    DateTime? // UTC datetime to send per-job reminder email
+  reminderSent  Boolean  @default(false) // true once the reminder email has been sent
   createdAt     DateTime @default(now())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
