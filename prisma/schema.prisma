@@ -24,6 +24,8 @@ model User {
   aiModelPref   String?  @default("auto") // "auto" | "gemini" | "groq"
   twoFactorSecret   String?
   twoFactorEnabled  Boolean  @default(false)
+  notifyDigest      Boolean  @default(false)
+  notifyHourUTC     Int      @default(0) // UTC hour to send daily digest (0-23)
   accounts        Account[]
   sessions        Session[]
   apiKeys         ApiKey[]

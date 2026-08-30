@@ -6334,10 +6334,31 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
     setHasPassword(true)
   }
 
+  // Notification preferences
+  const [notifyDigest, setNotifyDigest] = useState(false)
+  const [notifyHourWIB, setNotifyHourWIB] = useState(7)
+  const [notifySaving, setNotifySaving] = useState(false)
+  const [notifySaved, setNotifySaved] = useState(false)
+
   useEffect(() => {
-    fetch('/api/preferences').then(r => r.json()).then(d => setAiPref(d.aiModelPref || 'auto')).catch(() => {})
+    fetch('/api/preferences').then(r => r.json()).then(d => {
+      setAiPref(d.aiModelPref || 'auto')
+      setNotifyDigest(!!d.notifyDigest)
+      setNotifyHourWIB(d.notifyHourWIB ?? 7)
+    }).catch(() => {})
     fetch('/api/auth/mfa/status').then(r => r.json()).then(d => setMfaEnabled(!!d.enabled)).catch(() => setMfaEnabled(false))
   }, [])
+
+  const saveNotifyPrefs = async (digest: boolean, hourWIB: number) => {
+    setNotifySaving(true)
+    await fetch('/api/preferences', {
+      method: 'PUT', headers: JSON_HEADERS,
+      body: JSON.stringify({ notifyDigest: digest, notifyHourWIB: hourWIB }),
+    }).catch(() => {})
+    setNotifySaving(false)
+    setNotifySaved(true)
+    setTimeout(() => setNotifySaved(false), 2000)
+  }
 
   const handleSaveAiPref = async (pref: 'auto' | 'gemini' | 'groq') => {
     setAiPref(pref)
@@ -6403,7 +6424,7 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
     window.location.replace('/')
   }
 
-  const [settingsView, setSettingsView] = useState<'menu' | 'api-keys' | 'adzuna' | 'password' | 'import' | 'appearance' | 'language' | 'export' | 'ai-model' | 'delete-account' | 'mfa'>('menu')
+  const [settingsView, setSettingsView] = useState<'menu' | 'api-keys' | 'adzuna' | 'password' | 'import' | 'appearance' | 'language' | 'export' | 'ai-model' | 'delete-account' | 'mfa' | 'notifications'>('menu')
 
   // AI model preference
   const [aiPref, setAiPref] = useState<'auto' | 'gemini' | 'groq'>('auto')
@@ -6536,6 +6557,15 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
       badgeColor: mfaEnabled ? 'badge-green' : 'badge-gray',
     },
     {
+      id: 'notifications' as const,
+      icon: <Mail size={20} className="text-blue-600" />,
+      bg: 'bg-blue-50',
+      title: 'Notifikasi Email',
+      desc: 'Pengingat harian untuk apply loker via email',
+      badge: notifyDigest ? 'aktif' : null,
+      badgeColor: 'badge-green',
+    },
+    {
       id: 'delete-account' as const,
       icon: <Trash2 size={20} className="text-red-500" />,
       bg: 'bg-red-50',
@@ -6626,6 +6656,62 @@ function SettingsTab({ configuredKeys, onSaved, dark, toggleTheme }: {
             {lang === code && <CheckCircle size={16} className="text-primary" />}
           </button>
         ))}
+      </div>
+    </div>
+  )
+
+  if (settingsView === 'notifications') return (
+    <div className="max-w-2xl">
+      <SubHeader title="Notifikasi Email" />
+      <div className="card space-y-5">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Dapatkan email harian berisi lowongan yang perlu diapply dan link CV yang sudah kamu siapkan — berguna untuk apply dari HP di pagi hari.
+        </p>
+
+        {/* Toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">Pengingat Harian</p>
+            <p className="text-xs text-gray-500 mt-0.5">Email dikirim setiap hari pada jam yang kamu pilih</p>
+          </div>
+          <button
+            onClick={() => { setNotifyDigest(!notifyDigest); saveNotifyPrefs(!notifyDigest, notifyHourWIB) }}
+            className={`relative w-12 h-6 rounded-full transition-colors ${notifyDigest ? 'bg-primary' : 'bg-gray-200'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${notifyDigest ? 'translate-x-6' : ''}`} />
+          </button>
+        </div>
+
+        {/* Hour picker */}
+        {notifyDigest && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Jam Pengiriman (WIB)</label>
+            <div className="grid grid-cols-4 gap-2">
+              {[6, 7, 8, 9, 10, 11, 12, 18, 19, 20, 21, 22].map(h => (
+                <button key={h}
+                  onClick={() => { setNotifyHourWIB(h); saveNotifyPrefs(notifyDigest, h) }}
+                  className={`py-2 rounded-xl text-sm font-medium border transition-all ${notifyHourWIB === h ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-primary/40'}`}>
+                  {String(h).padStart(2, '0')}:00
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">Jam dipilih: <strong className="text-gray-700">{String(notifyHourWIB).padStart(2, '0')}:00 WIB</strong></p>
+          </div>
+        )}
+
+        {/* Save feedback */}
+        {notifySaving && <p className="text-xs text-gray-400">Menyimpan...</p>}
+        {notifySaved && <p className="text-xs text-green-600 font-medium">✓ Tersimpan</p>}
+
+        {/* Info */}
+        <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700 leading-relaxed">
+          <p className="font-semibold mb-1">Isi email harian:</p>
+          <ul className="space-y-0.5 list-disc list-inside">
+            <li>Lowongan dengan status "Saved" yang deadline-nya sudah dekat</li>
+            <li>Link download CV terbaru dari Arsip PDF</li>
+            <li>Tombol langsung ke Job Suite</li>
+          </ul>
+        </div>
       </div>
     </div>
   )
