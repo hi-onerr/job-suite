@@ -6,7 +6,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   // Public routes — always allow
-  if (pathname.startsWith('/api/auth') || pathname === '/api/db-test') {
+  if (pathname.startsWith('/api/auth') || pathname.startsWith('/api/cron/')) {
     return NextResponse.next()
   }
 
