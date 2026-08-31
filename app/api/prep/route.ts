@@ -9,7 +9,9 @@ export async function POST(req: NextRequest) {
   const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { jobDesc, company, role, profile } = await req.json()
+  const { jobDesc: jobDescRaw, company, role, profile: profileRaw } = await req.json()
+  const profile = (profileRaw ?? '').slice(0, 4000)
+  const jobDesc = (jobDescRaw ?? '').slice(0, 3000)
 
   if (!jobDesc || !profile) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })

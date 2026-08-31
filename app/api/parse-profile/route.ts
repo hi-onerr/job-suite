@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
 CV TEXT:
 """
-${text.slice(0, 12000)}
+${text.slice(0, 8000)}
 """
 
 Respond ONLY with valid JSON (no markdown, no backticks) in exactly this shape:
