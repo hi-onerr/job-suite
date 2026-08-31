@@ -1949,6 +1949,37 @@ function KanbanBoard({ jobs, onUpdate, onOpen }: {
   )
 }
 
+// ── CONFIRM MODAL ────────────────────────────────────────────────────────────
+function ConfirmModal({ title, message, confirmLabel = 'Ya', cancelLabel = 'Batal', onConfirm, onCancel, danger = false }: {
+  title: string
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
+  onConfirm: () => void
+  onCancel: () => void
+  danger?: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="font-bold text-gray-900 text-base mb-2">{title}</h3>
+        <p className="text-sm text-gray-500 leading-relaxed mb-6">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 text-sm font-semibold text-white rounded-lg transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── REMINDER SECTION ─────────────────────────────────────────────────────────
 function utcToWIBInput(iso: string): string {
   const d = new Date(iso)
@@ -2536,6 +2567,7 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
   const [cvHistory, setCvHistory] = useState<ArchiveItem[]>([])
   const [showCvHistory, setShowCvHistory] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [dupConfirm, setDupConfirm] = useState<{ fileName: string; onOk: () => void } | null>(null)
 
   const loadCvHistory = async () => {
     setHistoryLoading(true)
@@ -3120,8 +3152,11 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
                     if (!cvHistory.length) await loadCvHistory()
                     const duplicate = cvHistory.find(x => x.filename === pdfPreview.fileName)
                     if (duplicate) {
-                      const ok = window.confirm(`File "${pdfPreview.fileName}" sudah ada di arsip.\n\nKlik OK untuk buat versi baru, atau Cancel untuk pakai yang lama.`)
-                      if (!ok) return
+                      setDupConfirm({
+                        fileName: pdfPreview.fileName,
+                        onOk: () => archivePdf(pdfPreview.blob, pdfPreview.fileName, pdfPreview.kind, lastProvider),
+                      })
+                      return
                     }
                     await archivePdf(pdfPreview.blob, pdfPreview.fileName, pdfPreview.kind, lastProvider)
                   }}
@@ -3254,6 +3289,17 @@ function DocumentGenerator({ jobDesc, company, role, location, profile, savedDoc
             </div>
           </div>
         </div>
+      )}
+
+      {dupConfirm && (
+        <ConfirmModal
+          title="File sudah ada di arsip"
+          message={`"${dupConfirm.fileName}" sudah tersimpan. Buat versi baru atau pakai yang lama?`}
+          confirmLabel="Buat versi baru"
+          cancelLabel="Pakai yang lama"
+          onConfirm={() => { dupConfirm.onOk(); setDupConfirm(null) }}
+          onCancel={() => setDupConfirm(null)}
+        />
       )}
     </div>
   )
@@ -5461,6 +5507,7 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
   const triedRef = useRef(false)
 
   // CV Versions modal state
+  const [deleteVersionConfirm, setDeleteVersionConfirm] = useState<{ id: string; name: string } | null>(null)
   const [cvVersionModal, setCvVersionModal] = useState<{ open: boolean; editing: CvVersion | null }>({ open: false, editing: null })
   const [cvvName, setCvvName] = useState('')
   const [cvvSectors, setCvvSectors] = useState<string[]>([])
@@ -6002,7 +6049,7 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
                     <button onClick={() => openEditCvVersion(v)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
                       <Pencil size={12} />
                     </button>
-                    <button onClick={() => { if (confirm(`Hapus "${v.name}"?`)) onDeleteCvVersion?.(v.id) }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
+                    <button onClick={() => setDeleteVersionConfirm({ id: v.id, name: v.name })} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -6096,6 +6143,18 @@ function ProfileTab({ profile, onSave, structured, onStructured, hasGeminiKey, o
             </div>
           </div>
         </div>
+      )}
+
+      {deleteVersionConfirm && (
+        <ConfirmModal
+          title={`Hapus "${deleteVersionConfirm.name}"?`}
+          message="Versi CV ini akan dihapus permanen dan tidak bisa dikembalikan."
+          confirmLabel="Hapus"
+          cancelLabel="Batal"
+          danger
+          onConfirm={() => { onDeleteCvVersion?.(deleteVersionConfirm.id); setDeleteVersionConfirm(null) }}
+          onCancel={() => setDeleteVersionConfirm(null)}
+        />
       )}
     </div>
   )
