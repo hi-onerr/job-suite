@@ -105,11 +105,15 @@ function buildEmail(opts: {
 }
 
 export async function GET(req: NextRequest) {
-  // Vercel Cron sends Authorization: Bearer {CRON_SECRET}
-  const auth = req.headers.get('authorization')
+  // Allow Vercel Cron (x-vercel-cron header) or requests with matching CRON_SECRET.
+  // Middleware already whitelists /api/cron/ from session auth.
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1'
   const secret = process.env.CRON_SECRET
-  if (secret && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isVercelCron && secret) {
+    const auth = req.headers.get('authorization')
+    if (auth !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
