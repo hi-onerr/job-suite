@@ -181,6 +181,7 @@ export async function GET(req: NextRequest) {
     where: { reminderAt: { lte: now }, reminderSent: false },
     select: {
       id: true,
+      userId: true,
       company: true,
       role: true,
       deadline: true,
@@ -192,11 +193,27 @@ export async function GET(req: NextRequest) {
   let remindersSent = 0
   for (const app of dueApps) {
     try {
-      const html = buildReminderEmail({ app, appUrl })
+      // Find the most relevant CV archives for this job (by company+role match, fall back to 3 recent)
+      const companyLower = decodeHtmlEntities(app.company).toLowerCase()
+      const roleLower = decodeHtmlEntities(app.role).toLowerCase()
+      const allArchives = await prisma.cvArchive.findMany({
+        where: { userId: app.userId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { filename: true, publicUrl: true, company: true, jobTitle: true },
+      })
+      // Prefer archives matching company or role, then fallback to 3 most recent
+      const matched = allArchives.filter(a =>
+        (a.company && a.company.toLowerCase().includes(companyLower.slice(0, 6))) ||
+        (a.jobTitle && a.jobTitle.toLowerCase().includes(roleLower.slice(0, 6)))
+      )
+      const cvArchives = (matched.length > 0 ? matched : allArchives).slice(0, 3)
+
+      const html = buildReminderEmail({ app, cvArchives, appUrl })
       await transporter.sendMail({
         from: `"Job Application Suite" <${process.env.GMAIL_USER}>`,
         to: app.user.email,
-        subject: `🔔 Pengingat Apply — ${decodeHtmlEntities(app.role)} di ${decodeHtmlEntities(app.company)}`,
+        subject: `🔔 Waktunya Apply — ${decodeHtmlEntities(app.role)} di ${decodeHtmlEntities(app.company)}`,
         html,
       })
       await prisma.application.update({
@@ -218,44 +235,69 @@ function decodeHtmlEntities(str: string): string {
 
 function buildReminderEmail(opts: {
   app: { company: string; role: string; deadline: string | null; url: string | null }
+  cvArchives: { filename: string; publicUrl: string; company: string | null; jobTitle: string | null }[]
   appUrl: string
 }) {
-  const { app, appUrl } = opts
+  const { app, cvArchives, appUrl } = opts
   const todayWIB = new Date(Date.now() + 7 * 60 * 60 * 1000).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+  const cvRows = cvArchives.map(cv => `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f3f4f6">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:8px;background:#fef2f2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="font-size:14px">📄</span>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:#1a1a2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cv.filename}</div>
+            ${cv.company || cv.jobTitle ? `<div style="font-size:11px;color:#9ca3af;margin-top:1px">${[cv.company, cv.jobTitle].filter(Boolean).join(' · ')}</div>` : ''}
+          </div>
+          <a href="${cv.publicUrl}" style="flex-shrink:0;display:inline-block;padding:6px 14px;background:#6366f1;color:white;text-decoration:none;border-radius:6px;font-weight:600;font-size:12px">↓ Download</a>
+        </div>
+      </td>
+    </tr>`).join('')
+
   return `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:480px;margin:32px auto;padding:0 16px">
+  <div style="max-width:520px;margin:32px auto;padding:0 16px">
     <div style="background:linear-gradient(135deg,#6366f1,#7c3aed);border-radius:16px 16px 0 0;padding:28px 28px 24px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <span style="color:rgba(255,255,255,0.9);font-size:13px;font-weight:600">Job Application Suite</span>
-      </div>
-      <h1 style="margin:0;font-size:22px;font-weight:800;color:white;line-height:1.3">🔔 Waktunya Apply!</h1>
+      <span style="color:rgba(255,255,255,0.9);font-size:13px;font-weight:600">Job Application Suite</span>
+      <h1 style="margin:10px 0 0;font-size:22px;font-weight:800;color:white;line-height:1.3">🔔 Waktunya Apply!</h1>
       <p style="margin:8px 0 0;font-size:13px;color:rgba(255,255,255,0.8)">${todayWIB}</p>
     </div>
     <div style="background:white;padding:28px;border-radius:0 0 16px 16px;box-shadow:0 4px 24px rgba(0,0,0,0.06)">
-      <p style="margin:0 0 20px;font-size:14px;color:#4b5563;line-height:1.6">
-        Kamu punya pengingat untuk melamar lowongan berikut:
-      </p>
-      <div style="background:#f3f4f6;border-radius:12px;padding:20px;margin-bottom:24px">
+
+      <!-- Job Info -->
+      <div style="background:#f8f9ff;border:1px solid #e0e7ff;border-radius:12px;padding:20px;margin-bottom:24px">
         <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:4px">${decodeHtmlEntities(app.role)}</div>
-        <div style="font-size:14px;color:#6b7280">${decodeHtmlEntities(app.company)}</div>
-        ${app.deadline ? `<div style="font-size:12px;color:#ef4444;margin-top:8px;font-weight:600">Deadline: ${app.deadline}</div>` : ''}
+        <div style="font-size:14px;color:#6b7280;margin-bottom:${app.deadline || app.url ? '12' : '0'}px">${decodeHtmlEntities(app.company)}</div>
+        ${app.deadline ? `<div style="display:inline-block;background:#fef2f2;color:#ef4444;font-size:12px;font-weight:600;padding:3px 10px;border-radius:6px;margin-bottom:${app.url ? '12' : '0'}px">⏰ Deadline: ${app.deadline}</div>` : ''}
+        ${app.url ? `<div><a href="${app.url}" style="display:inline-flex;align-items:center;gap:6px;padding:10px 20px;background:linear-gradient(135deg,#6366f1,#7c3aed);color:white;text-decoration:none;border-radius:8px;font-weight:700;font-size:13px">🔗 Buka Halaman Lowongan →</a></div>` : ''}
       </div>
+
+      ${cvArchives.length > 0 ? `
+      <!-- CV Section -->
+      <div style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1a1a2e">📁 CV Siap Kirim (${cvArchives.length})</h2>
+        <table style="width:100%;border-collapse:collapse">${cvRows}</table>
+      </div>` : `
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px;margin-bottom:24px;text-align:center">
+        <p style="margin:0;font-size:13px;color:#92400e">Belum ada CV di arsip. Generate CV dulu di Job Suite!</p>
+      </div>`}
+
+      <!-- CTA -->
       <div style="text-align:center;margin-bottom:24px">
-        ${app.url ? `<a href="${app.url}" style="display:inline-block;padding:13px 32px;background:linear-gradient(135deg,#6366f1,#7c3aed);color:white;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;margin-bottom:12px">
-          Buka Lowongan →
-        </a><br>` : ''}
-        <a href="${appUrl}" style="display:inline-block;padding:10px 24px;background:#f3f4f6;color:#6366f1;text-decoration:none;border-radius:8px;font-weight:600;font-size:13px">
+        <a href="${appUrl}" style="display:inline-block;padding:12px 28px;background:#f3f4f6;color:#6366f1;text-decoration:none;border-radius:8px;font-weight:600;font-size:13px">
           Buka Job Suite
         </a>
       </div>
+
       <hr style="margin:0 0 16px;border:none;border-top:1px solid #f3f4f6">
       <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;line-height:1.6">
-        Pengingat ini diatur melalui Job Suite.<br>
-        Atur ulang di <a href="${appUrl}" style="color:#6366f1;text-decoration:none">Job Tracker</a>
+        Pengingat ini diatur melalui Job Suite · <a href="${appUrl}" style="color:#6366f1;text-decoration:none">Atur ulang di Job Tracker</a>
       </p>
     </div>
   </div>
