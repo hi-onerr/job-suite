@@ -127,8 +127,6 @@ export async function GET(req: NextRequest) {
     select: { id: true, name: true, email: true },
   })
 
-  if (users.length === 0) return NextResponse.json({ sent: 0 })
-
   const appUrl = process.env.NEXTAUTH_URL || 'https://job-suite.vercel.app'
   const transporter = createTransporter()
   const todayStr = new Date().toISOString().slice(0, 10)
